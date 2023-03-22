@@ -1,4 +1,4 @@
-// Credit mechanism for rate limits.
+// Credit based rate limit controller.
 //
 // The credit is a numerical quantity replenished periodically, at intervals T,
 // with a constant number N. The replenished value may by capped to a max M>=N,
