@@ -8,10 +8,54 @@ import http.client
 import http.server
 import re
 import socketserver
+import zlib
 from http import HTTPStatus
 from typing import BinaryIO, Callable, Optional
 
 DEFAULT_PORT = 8080
+
+
+class Decoder:
+    pass
+
+
+class DecodeGzip(Decoder):
+    def __init__(self, fh: BinaryIO):
+        self._fh = gzip.open(fh, "rb")
+
+    def read(self, n: Optional[int] = None) -> bytes:
+        return self._fh.read(n)
+
+
+class DecodeDeflate(Decoder):
+    def __init__(self, fh: BinaryIO):
+        self._fh = fh
+        self._b = None
+
+    def read(self, n: Optional[int] = None) -> bytes:
+        if self._b is None:
+            self._b = zlib.decompress(self._fh.read())
+            self._n_read = 0
+            self._content_length = len(self._b)
+        if n is None:
+            to_read = self._content_length - self._n_read
+        else:
+            to_read = min(n, self._content_length - self._n_read)
+        b = b""
+        if to_read > 0:
+            if self._n_read == 0 and to_read == self._content_length:
+                b = self._b
+            else:
+                b = self._b[self._n_read : self._n_read + to_read + 1]
+            self._n_read += to_read
+        return b
+
+
+SUPPORTED_ENCODING = {
+    "gzip": DecodeGzip,
+    "x-gzip": DecodeGzip,
+    "deflate": DecodeDeflate,
+}
 
 
 class BodyError(Exception):
@@ -26,7 +70,7 @@ class BodyReader:
         self._content_length = content_length
         self._n_read = 0
 
-    def read(self, n: Optional[int]) -> bytes:
+    def read(self, n: Optional[int] = None) -> bytes:
         if n is None:
             to_read = self._content_length - self._n_read
         else:
@@ -39,20 +83,13 @@ class BodyReader:
         return b
 
 
-class ChunkedBodyReader:
-    def __init__(self, fh: BinaryIO, fmt_logger: Optional[Callable]):
+class ChunkReader:
+    def __init__(self, fh: BinaryIO, fmt_logger: Optional[Callable] = None):
         self._fh = fh
         self._fmt_logger = fmt_logger
-        self._chunk_sz, self._chunk_ext = None, None
-        self._last_chunk = False
-
-    def _parse_chunk_size_and_extension(self, chunk_sz_ext: bytes):
-        try:
-            sz_ext = re.split(r"\s*;\s*", str(chunk_sz_ext, "utf-8"))
-            self._chunk_sz = int(sz_ext[0], base=16)
-            self._chunk_ext = [re.split(r"\s*=\s*", e.strip()) for e in sz_ext[1:]]
-        except (ValueError, TypeError, IndexError, UnicodeDecodeError):
-            raise BodyError("Cannot process chunk header")
+        self._br = None
+        self._at_eof = False
+        self._locate_next_chunk()
 
     def _locate_next_chunk(self):
         chunk_sz_ext = b""
@@ -69,56 +106,77 @@ class ChunkedBodyReader:
         if b != b"\n":
             return
         # Parse chunk_sz_ext:
-        self._parse_chunk_size_and_extension(chunk_sz_ext)
+        try:
+            sz_ext = re.split(r"\s*;\s*", str(chunk_sz_ext, "utf-8"))
+            chunk_sz = int(sz_ext[0], base=16)
+            chunk_ext = [re.split(r"\s*=\s*", e.strip()) for e in sz_ext[1:]]
+        except (ValueError, TypeError, IndexError, UnicodeDecodeError):
+            raise BodyError("Cannot process chunk header")
         if self._fmt_logger is not None:
             self._fmt_logger(
                 "Chunk size: %d, extensions: %s",
-                self._chunk_sz,
-                repr(self._chunk_ext),
+                chunk_sz,
+                repr(chunk_ext),
             )
-        self._chunk_read = 0
+        if chunk_sz > 0:
+            self._br = BodyReader(self._fh, chunk_sz)
+        else:
+            self._verify_end_of_chunk()
+
+    def _verify_end_of_chunk(self):
+        if not self._at_eof:
+            if self._fh.read(2) != b"\r\n":
+                raise BodyError("Cannot locate chunk end")
+            self._at_eof = True
+
+    def read(self, n: Optional[int] = None) -> bytes:
+        if self._at_eof:
+            return b""
+        b = self._br.read(n)
+        if len(b) == 0:
+            self._verify_end_of_chunk()
+        return b
+
+    @property
+    def at_eof(self):
+        return self._at_eof
+
+
+class ChunkedBodyReader:
+    def __init__(
+        self,
+        fh: BinaryIO,
+        decoder_class: Optional[Decoder] = None,
+        fmt_logger: Optional[Callable] = None,
+    ):
+        self._fh = fh
+        self._decoder_class = decoder_class
+        self._fmt_logger = fmt_logger
+        self._cr = None
+        self._last_chunk = False
 
     def read(self, n: Optional[int] = None) -> bytes:
         b = b""
-        n_read = 0
-        while (n is None or n_read < n) and not self._last_chunk:
-            if self._chunk_sz is None:
-                self._locate_next_chunk()
-                if self._chunk_sz is None:
-                    raise BodyError("Cannot locate chunk start")
-            self._last_chunk = self._chunk_sz == 0
-            if not self._last_chunk:
-                to_read = min(n - n_read, self._chunk_sz - self._chunk_read)
-                chunk_b = self._fh.read(to_read)
-                if len(chunk_b) != to_read:
-                    raise BodyError("Cannot read full chunk")
-                if len(b) > 0:
-                    b += chunk_b
-                else:
-                    b = chunk_b
-                n_read += to_read
-                self._chunk_read += to_read
-            if self._chunk_read == self._chunk_sz:
-                # Verify '\r\n' after the chunk:
-                if self._fh.read(2) != b"\r\n":
-                    raise BodyError("Cannot locate chunk end")
-                # Done w/ this chunk:
-                self._chunk_sz, self._chunk_ext = None, None
+        to_read = n
+        while (to_read is None or to_read > 0) and not self._last_chunk:
+            if self._cr is None:
+                cr = ChunkReader(self._fh, fmt_logger=self._fmt_logger)
+                if cr.at_eof:
+                    cr = None
+                    self._last_chunk = True
+                    break
+                elif self._decoder_class is not None:
+                    cr = self._decoder_class(cr)
+                self._cr = cr
+            chunk_b = self._cr.read(to_read)
+            chunk_n = len(chunk_b)
+            if chunk_n > 0:
+                b += chunk_b
+                if to_read is not None:
+                    to_read -= chunk_n
+            else:
+                self._cr = None
         return b
-
-
-class DecodeGzip:
-    def __init__(self, fh: BinaryIO):
-        self._fh = gzip.open(fh, "rb")
-
-    def read(self, n: Optional[int] = None) -> bytes:
-        return self._fh.read(n)
-
-
-SUPPORTED_ENCODING = {
-    "gzip": DecodeGzip,
-    "x-gzip": DecodeGzip,
-}
 
 
 class HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
@@ -128,9 +186,26 @@ class HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
         transfer_encodings = set(
             re.split(r"\s*,\s*", self.headers.get("Transfer-Encoding", "").strip())
         )
-        if "chunked" in transfer_encodings:
-            body_reader = ChunkedBodyReader(self.rfile, self.log_message)
-            transfer_encodings.discard("chunked")
+        transfer_decoder_class = None
+        is_chunked = False
+        for encoding in transfer_encodings:
+            if encoding == "":
+                continue
+            if encoding == "chunked":
+                is_chunked = True
+                continue
+            transfer_decoder_class = SUPPORTED_ENCODING.get(encoding)
+            if transfer_decoder_class is None:
+                self.send_error(
+                    HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
+                    HTTPStatus.UNSUPPORTED_MEDIA_TYPE.description,
+                    explain=f"{encoding}: unsupported Transfer-Encoding",
+                )
+                return
+        if is_chunked:
+            body_reader = ChunkedBodyReader(
+                self.rfile, transfer_decoder_class, self.log_message
+            )
         else:
             try:
                 content_length = int(self.headers["Content-Length"])
@@ -142,36 +217,26 @@ class HTTPRequestHandler(http.server.BaseHTTPRequestHandler):
                     explain="Missing/invalid Content-Length",
                 )
                 return
-        for encoding in transfer_encodings:
-            if encoding == "":
-                pass
-            elif encoding in SUPPORTED_ENCODING:
-                body_reader = SUPPORTED_ENCODING[encoding](body_reader)
-                break
-            else:
-                self.send_error(
-                    HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
-                    HTTPStatus.UNSUPPORTED_MEDIA_TYPE.description,
-                    explain=f"{encoding}: unsupported Transfer-Encoding",
-                )
-                return
+            if transfer_decoder_class is not None:
+                body_reader = transfer_decoder_class(body_reader)
 
         content_encodings = re.split(
             r"\s*,\s*", self.headers.get("Content-Encoding", "").strip()
         )
+        content_decoder_class = None
         for encoding in content_encodings:
             if encoding == "":
                 pass
-            elif encoding in SUPPORTED_ENCODING:
-                body_reader = SUPPORTED_ENCODING[encoding](body_reader)
-                break
-            else:
+            content_decoder_class = SUPPORTED_ENCODING.get(encoding)
+            if content_decoder_class is None:
                 self.send_error(
                     HTTPStatus.UNSUPPORTED_MEDIA_TYPE,
                     HTTPStatus.UNSUPPORTED_MEDIA_TYPE.description,
                     explain=f"{encoding}: unsupported Content-Encoding",
                 )
                 return
+        if content_decoder_class is not None:
+            body_reader = content_decoder_class(body_reader)
 
         expect_match = re.match("\s*(\d+)", self.headers.get("Expect", ""))
         if expect_match is not None:
