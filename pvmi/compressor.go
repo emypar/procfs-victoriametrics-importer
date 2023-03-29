@@ -30,7 +30,7 @@ import (
 const (
 	DEFAULT_COMPRESSION_LEVEL            = gzip.DefaultCompression
 	DEFAULT_COMPRESSED_BATCH_TARGET_SIZE = 0x10000 // 64k
-	INITIAL_COMPRESSION_FACTOR           = 2.
+	INITIAL_COMPRESSION_FACTOR           = 5.
 	DEFAULT_COMPRESSION_FACTOR_ALPHA     = 0.5
 	// A compressed batch should have at least this size to be eligible for
 	// compression ratio evaluation:
@@ -105,8 +105,8 @@ func StartNewCompressorPool(
 	nCompressors int,
 ) (*CompressorPoolContext, error) {
 	Log.Infof(
-		"Start compressor pool with compressionLevel=%d, batchTargetSize=%d, flushInterval=%s, alpha=%f",
-		compressionLevel, batchTargetSize, flushInterval, alpha,
+		"Start compressor pool with nCompressors=%d, compressionLevel=%d, batchTargetSize=%d, flushInterval=%s, alpha=%f",
+		nCompressors, compressionLevel, batchTargetSize, flushInterval, alpha,
 	)
 	poolCtx := &CompressorPoolContext{
 		compressionLevel: compressionLevel,
@@ -194,6 +194,9 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 		return err
 	}
 	compressionFactor := INITIAL_COMPRESSION_FACTOR
+	if compressionLevel == gzip.NoCompression {
+		compressionFactor = 1.
+	}
 
 	// Initialize a stopped timer.
 	flushTimer := time.NewTimer(time.Hour)
@@ -202,9 +205,6 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 	}
 
 	contentEncoding := "gzip"
-	if compressionLevel == 0 {
-		contentEncoding = ""
-	}
 
 	go func() {
 		nBatchReads, nBatchBytesRead, doSend, timeoutFlush := 0, 0, false, false
@@ -286,11 +286,11 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 					gzBuf = nil
 				}
 
-				if nCompressedBytes >= COMPRESSED_BATCH_MIN_SIZE {
+				if compressionLevel != gzip.NoCompression &&
+					nCompressedBytes >= COMPRESSED_BATCH_MIN_SIZE {
 					compressionFactor = (1-alpha)*float64(nBatchBytesRead)/float64(nCompressedBytes) +
 						alpha*compressionFactor
 					nBatchBytesLimit = int(float64(batchTargetSize) * compressionFactor)
-					Log.Infof("Compressor# %d: Compression factor adjusted to: %.03f", id, compressionFactor)
 				}
 
 				stats.m.Lock()

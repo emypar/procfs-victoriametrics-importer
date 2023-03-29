@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"fmt"
+	"path"
 	"sync"
 	"testing"
 	"time"
@@ -161,6 +162,14 @@ func TestCompressorFewMetrics(t *testing.T) {
 			4,
 			true,
 		},
+		{
+			gzip.NoCompression,
+			DEFAULT_COMPRESSED_BATCH_TARGET_SIZE,
+			1 * time.Second,
+			DEFAULT_COMPRESSION_FACTOR_ALPHA,
+			1,
+			false,
+		},
 	} {
 		t.Run(
 			fmt.Sprintf(
@@ -174,6 +183,62 @@ func TestCompressorFewMetrics(t *testing.T) {
 			),
 			func(t *testing.T) { testCompressor(t, tc, metrics) },
 		)
-		break
+	}
+}
+
+func TestCompressorPidMetrics(t *testing.T) {
+	pmtcList := []PidMetricsTestCase{}
+	err := testutils.LoadJsonFile(
+		path.Join(TestdataTestCasesDir, PID_METRICS_TEST_CASES_FILE_NAME),
+		&pmtcList,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	metrics := make([]string, 0)
+	for i := 0; i < 10; i++ {
+		for _, pmtc := range pmtcList {
+			metrics = append(metrics, pmtc.WantMetrics...)
+		}
+	}
+
+	for _, tc := range []*CompressorTestCase{
+		{
+			gzip.DefaultCompression,
+			DEFAULT_COMPRESSED_BATCH_TARGET_SIZE,
+			5 * time.Second,
+			DEFAULT_COMPRESSION_FACTOR_ALPHA,
+			1,
+			false,
+		},
+		{
+			gzip.DefaultCompression,
+			DEFAULT_COMPRESSED_BATCH_TARGET_SIZE,
+			5 * time.Second,
+			DEFAULT_COMPRESSION_FACTOR_ALPHA,
+			4,
+			false,
+		},
+		{
+			gzip.BestSpeed,
+			DEFAULT_COMPRESSED_BATCH_TARGET_SIZE,
+			1 * time.Second,
+			DEFAULT_COMPRESSION_FACTOR_ALPHA,
+			4,
+			true,
+		},
+	} {
+		t.Run(
+			fmt.Sprintf(
+				"NumComp=%d,TargetSz=%d,FlushSec=%.03f,Alpha=%.03f,Lvl=%d,Flush=%v",
+				tc.nCompressors,
+				tc.batchTargetSize,
+				tc.flushInterval.Seconds(),
+				tc.alpha,
+				tc.compressionLevel,
+				tc.waitForFlush,
+			),
+			func(t *testing.T) { testCompressor(t, tc, metrics) },
+		)
 	}
 }
