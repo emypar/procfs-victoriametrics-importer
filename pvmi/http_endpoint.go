@@ -21,14 +21,8 @@ import (
 	"container/list"
 	"fmt"
 	"io"
-	"net/url"
 	"os"
 	"sync"
-)
-
-const (
-	HTTP_ENDPOINT_HEALTH_URI = "/ready"
-	HTTP_ENDPOINT_IMPORT_URI = "/api/v1/import/prometheus"
 )
 
 type HttpEndpoint struct {
@@ -85,27 +79,6 @@ func (eps *HttpEndpoints) AddHttpUrls(importUrl, healthUrl string) {
 	}
 	ep.listElement = ep.list.PushBack(ep)
 	eps.importUrlMap[importUrl] = ep
-}
-
-func HttpEndpointUrlsFromBaseUrl(baseUrl string) (string, string, error) {
-	importUrl, err := url.JoinPath(baseUrl, HTTP_ENDPOINT_IMPORT_URI)
-	if err != nil {
-		return "", "", err
-	}
-	healthUrl, err := url.JoinPath(baseUrl, HTTP_ENDPOINT_HEALTH_URI)
-	if err != nil {
-		return "", "", err
-	}
-	return importUrl, healthUrl, nil
-}
-
-func (eps *HttpEndpoints) AddHttpBaseUrl(baseUrl string) error {
-	importUrl, healthUrl, err := HttpEndpointUrlsFromBaseUrl(baseUrl)
-	if err != nil {
-		return err
-	}
-	eps.AddHttpUrls(importUrl, healthUrl)
-	return nil
 }
 
 // Retrieve the next URL to use in a LRU fashion:

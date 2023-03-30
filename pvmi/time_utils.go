@@ -15,34 +15,22 @@ var TimeSince func(time.Time) time.Duration = time.Since
 // triggered by invoking a method rather than by having to wait.
 type MockableTimer interface {
 	GetChannel() <-chan time.Time
-	Reset(time.Duration)
+	Reset(time.Duration) bool
 	Stop() bool
-	Fire()
 }
 
 type RealTimer struct {
-	timer *time.Timer
+	*time.Timer
 }
 
 func (t *RealTimer) GetChannel() <-chan time.Time {
-	return t.timer.C
+	return t.C
 }
 
-func (t *RealTimer) Reset(d time.Duration) {
-	t.timer.Reset(d)
-}
+type NewMockableTimerFn func(time.Duration, string) MockableTimer
 
-func (t *RealTimer) Stop() bool {
-	return t.timer.Stop()
-}
-
-func (t *RealTimer) Fire() {
-}
-
-func NewRealTimer(d time.Duration) *RealTimer {
-	return &RealTimer{
-		timer: time.NewTimer(d),
-	}
+func NewRealTimer(d time.Duration, id string) MockableTimer {
+	return MockableTimer(&RealTimer{time.NewTimer(d)})
 }
 
 type MockTimer struct {
@@ -71,7 +59,7 @@ func (m *MockTimer) Fire() {
 	}
 }
 
-func NewMockTimer(d time.Duration) *MockTimer {
+func NewMockTimer(d time.Duration, id string) *MockTimer {
 	return &MockTimer{
 		C:       make(chan time.Time, 1),
 		running: true,
