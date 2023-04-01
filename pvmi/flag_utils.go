@@ -10,7 +10,7 @@ import (
 // Format multiline usage for help message:
 func FormatFlagUsage(usage string) string {
 	usage = strings.TrimSpace(usage)
-	usage = regexp.MustCompile(`\n\s+`).ReplaceAllString(usage, "\n\t")
+	usage = regexp.MustCompile(`\n\s+`).ReplaceAllString(usage, "\n")
 	usage = regexp.MustCompile(`[\t ]{2,}`).ReplaceAllString(usage, " ")
 	return usage
 }

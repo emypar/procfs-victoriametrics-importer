@@ -11,6 +11,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"strconv"
@@ -225,7 +226,7 @@ type HttpSenderPool struct {
 	newTimerFn NewMockableTimerFn
 }
 
-func StartNewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
+func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 	if config == nil {
 		config = BuildHttpSendConfigFromArgs()
 	}
@@ -272,27 +273,44 @@ func StartNewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 		newTimerFn:              newTimerFn,
 	}
 
-	// Upon creation all endpoints are marked unhealthy; start the health checkers:
-	for e := pool.endPoints.unhealthy.Front(); e != nil; e = e.Next() {
-		ep := e.Value.(*HttpEndpoint)
-		err = pool.StartHealthCheck(ep)
-		if err != nil {
-			pool.Stop()
-			return nil, err
-		}
-	}
-
 	return pool, nil
 }
 
-func (pool *HttpSenderPool) GetImportUrl() string {
-	return pool.endPoints.GetImportUrl()
+func (pool *HttpSenderPool) Start() error {
+	// Upon creation all endpoints are marked unhealthy; start the health checkers.
+
+	for e := pool.endPoints.unhealthy.Front(); e != nil; {
+		// Since health check may move the unhealthy elements to another, the
+		// usual unhealthy first, next approach may not work, unless the next
+		// element is retrieved first!
+		e_next := e.Next()
+		ep := e.Value.(*HttpEndpoint)
+		err := pool.StartHealthCheck(ep)
+		if err != nil {
+			pool.Stop()
+			return err
+		}
+		e = e_next
+	}
+	return nil
+}
+
+func StartNewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
+	pool, err := NewHttpSenderPool(config)
+	if err != nil {
+		return nil, err
+	}
+	return pool, pool.Start()
 }
 
 func (pool *HttpSenderPool) Stop() {
 	pool.healthCheckCancelFn()
 	pool.healthCheckWg.Wait()
 	Log.Info("Sender pool stopped")
+}
+
+func (pool *HttpSenderPool) GetImportUrl() string {
+	return pool.endPoints.GetImportUrl()
 }
 
 func (pool *HttpSenderPool) MarkImportUrlUnhealthy(importUrl string) error {
@@ -320,8 +338,11 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 	}
 
 	Log.Infof("%s: Start health check", importUrl)
-	checkFailureN, logCheckFailure, errMsg := 0, false, ""
+	checkFailureN, logCheckFailure := 0, false
 	response, err := httpClient.Do(request)
+	if response != nil && response.Body != nil {
+		io.ReadAll(response.Body)
+	}
 	if err == nil && response.StatusCode == http.StatusOK {
 		Log.Infof("%s: Healthy", importUrl)
 		pool.endPoints.MarkHttpEndpointHealthy(ep)
@@ -340,27 +361,29 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 			healthCheckWg.Done()
 		}()
 		for {
+
 			if logCheckFailure {
 				if err != nil {
-					errMsg = err.Error()
+					Log.Warnf("%s unhealthy: %s", importUrl, err)
 				} else {
-					errMsg = response.Status
+					Log.Warnf("%s unhealthy: %s %s: %s", importUrl, method, healthUrl, response.Status)
 				}
-				Log.Warnf("%s Unhealthy: %s %s: %s", importUrl, method, healthUrl, errMsg)
 				checkFailureN = 1
 			}
 
-			prevStatusCode, prevErr := response.StatusCode, err
+			prevResponse, prevErr := response, err
 
 			select {
 			case <-healthCheckCtx.Done():
 				return
 			case <-timerC:
 			}
-
 			timer.Reset(healthCheckPause)
 
-			response, err := httpClient.Do(request)
+			response, err = httpClient.Do(request)
+			if response != nil && response.Body != nil {
+				io.ReadAll(response.Body)
+			}
 			if err == nil && response.StatusCode == http.StatusOK {
 				Log.Infof("%s: Healthy", importUrl)
 				pool.endPoints.MarkHttpEndpointHealthy(ep)
@@ -368,10 +391,9 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 			}
 
 			logCheckFailure = true
-			if prevStatusCode == response.StatusCode &&
-				(prevErr == nil && err == nil ||
-					prevErr != nil && err != nil && prevErr.Error() != err.Error()) {
-				checkFailureN += 1
+			if (prevErr != nil && err != nil && prevErr.Error() == err.Error()) ||
+				(prevErr == nil && err == nil && prevResponse.StatusCode == response.StatusCode) {
+				checkFailureN++
 				if checkFailureN < logNthCheckFailure {
 					logCheckFailure = false
 				}
@@ -445,6 +467,9 @@ func (pool *HttpSenderPool) Sender(
 		request.Header["Content-Length"] = contentLengthHeader
 
 		response, err := pool.httpClient.Do(request)
+		if response != nil && response.Body != nil {
+			io.ReadAll(response.Body)
+		}
 		if err == nil && response.StatusCode == http.StatusOK {
 			return
 		}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strconv"
 	"testing"
 	"time"
 
@@ -137,41 +138,112 @@ func (mts *MockableTimers) NewMockTimer(d time.Duration, id string) MockableTime
 	return MockableTimer(mockTimer)
 }
 
-func prepareHttpSenderPoolForTest(urlSpecList string) (
+func prepareHttpSenderPoolForTest(
+	urlSpecList string,
+	// The list on indexes in urlSpecList that should be started as healthy. If
+	// it has only one element == -1 then start them all as healthy.
+	startHealthyIndexList []int,
+) (
 	pool *HttpSenderPool,
 	importUrls []string,
 	healthUrls []string,
 	mockableTimers *MockableTimers,
 	err error,
 ) {
+	defer func() {
+		if err != nil && pool != nil {
+			pool.Stop()
+		}
+	}()
+
+	// Prepare the client mocks for the healthy import URLs. Set the
+	// expectations for healthy/pending health checks lists:
+	importHealthUrlPairs, parseErr := ParseEndpointSpec(urlSpecList)
+	if parseErr != nil {
+		err = parseErr
+		return
+	}
+	importUrls = make([]string, 0)
+	healthUrls = make([]string, 0)
+	for _, importHealthUrlPair := range importHealthUrlPairs {
+		importUrls = append(importUrls, importHealthUrlPair.importUrl)
+		healthUrls = append(healthUrls, importHealthUrlPair.healthUrl)
+	}
+
+	healthyIndexSet := make(map[int]bool)
+	unhealthyIndexSet := make(map[int]bool)
+	if len(startHealthyIndexList) == 1 && startHealthyIndexList[0] == -1 {
+		for i := 0; i < len(importHealthUrlPairs); i++ {
+			healthyIndexSet[i] = true
+		}
+	} else {
+		for _, i := range startHealthyIndexList {
+			healthyIndexSet[i] = true
+		}
+		for i := 0; i < len(importHealthUrlPairs); i++ {
+			if !healthyIndexSet[i] {
+				unhealthyIndexSet[i] = true
+			}
+		}
+	}
+
 	// Prepare config w/ mocks for timers and HTTP client:
 	config := BuildHttpSendConfigFromArgs()
 	config.urlSpecList = urlSpecList
 	config.httpClient = NewHttpClientDoerMock()
 	mockableTimers = NewMockableTimers()
 	config.newTimerFn = mockableTimers.NewMockTimer
-	pool, err = StartNewHttpSenderPool(config)
+	pool, err = NewHttpSenderPool(config)
 	if err != nil {
 		return
 	}
 
-	// Extract import and health URLs in 2 parallel lists:
-	importUrls = make([]string, 0)
-	healthUrls = make([]string, 0)
-	for importUrl, ep := range pool.endPoints.importUrlMap {
-		importUrls = append(importUrls, importUrl)
-		healthUrls = append(healthUrls, ep.healthUrl)
+	// Prepare HTTP client mocks for the import URLs that should check healthy
+	// from the start:
+	httpClientDoerMock := pool.httpClient.(*HttpClientDoerMock)
+	for i, _ := range healthyIndexSet {
+		httpClientDoerMock.setGetResponse(
+			healthUrls[i],
+			&http.Response{StatusCode: http.StatusOK},
+			nil,
+		)
 	}
 
-	// Wait until all timers have registered; note that they use the import URL:
+	err = pool.Start()
+	if err != nil {
+		return
+	}
+
+	// Wait until:
+	//  - all expected healthy import URLs appear in the healthy list
+	//  - all pending health check import URLs have timers registered
 	allRegistered := false
 	for pollN := 0; !allRegistered && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
 		if pollN > 0 {
 			time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
 		}
+
 		allRegistered = true
-		for _, importUrl := range importUrls {
-			_, ok := mockableTimers.timers[importUrl]
+
+		foundHealthyImportUrls := make(map[string]bool)
+		for i := 0; i < len(startHealthyIndexList); i++ {
+			importUrl := pool.GetImportUrl()
+			if importUrl != "" {
+				foundHealthyImportUrls[importUrl] = true
+			}
+		}
+		for i, _ := range healthyIndexSet {
+			if !foundHealthyImportUrls[importUrls[i]] {
+				allRegistered = false
+				break
+			}
+		}
+		if !allRegistered {
+			continue
+		}
+
+		for i, _ := range unhealthyIndexSet {
+			_, ok := mockableTimers.timers[importUrls[i]]
 			if !ok {
 				allRegistered = false
 				break
@@ -179,15 +251,74 @@ func prepareHttpSenderPoolForTest(urlSpecList string) (
 		}
 	}
 	if !allRegistered {
-		pool.Stop()
 		err = fmt.Errorf("Not all health checkers started after %s", HTTP_SEND_TEST_MAX_WAIT)
 	}
 
 	return
 }
 
-func testHttpEndpointsHealth(t *testing.T, urlSpecList string) {
-	pool, importUrls, healthUrls, mockableTimers, err := prepareHttpSenderPoolForTest(urlSpecList)
+func testHttpSendPoolStart(t *testing.T, urlSpecList string, startHealthyIndexList []int) {
+	pool, _, _, _, err := prepareHttpSenderPoolForTest(
+		urlSpecList, startHealthyIndexList,
+	)
+	pool.Stop()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func makeIndexList(mask int) []int {
+	indexList := make([]int, 0)
+	for i := 0; mask > 0; i, mask = i+1, mask>>1 {
+		if mask&1 > 0 {
+			indexList = append(indexList, i)
+		}
+	}
+	return indexList
+}
+
+func indexListToString(indexList []int) string {
+	s := ""
+	for k, i := range indexList {
+		if k > 0 {
+			s += ","
+		}
+		s += strconv.Itoa(i)
+	}
+	return s
+}
+
+func TestHttpSendPoolStart(t *testing.T) {
+	for _, urlSpecList := range []string{
+		"http://1.1.1.1:8080",
+		"http://1.1.1.1:8080,http://1.1.1.2:8080",
+		"http://1.1.1.1:8080,http://1.1.1.2:8080,http://1.1.1.3:8080",
+		"(http://1.1.1.1:8080/import,http://1.1.1.1:8080/health),http://1.1.1.2:8080,http://1.1.1.3:8080",
+	} {
+		importHealthUrlPairs, err := ParseEndpointSpec(urlSpecList)
+		if err != nil {
+			t.Log(err)
+			continue
+		}
+
+		for mask := 0; mask < 1<<len(importHealthUrlPairs); mask++ {
+			startHealthyIndexList := makeIndexList(mask)
+			t.Run(
+				fmt.Sprintf(
+					"urlSpecList=%s,startHealthyIndexList=%s",
+					urlSpecList,
+					indexListToString(startHealthyIndexList),
+				),
+				func(t *testing.T) {
+					testHttpSendPoolStart(t, urlSpecList, startHealthyIndexList)
+				},
+			)
+		}
+	}
+}
+
+func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string) {
+	pool, importUrls, healthUrls, mockableTimers, err := prepareHttpSenderPoolForTest(urlSpecList, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -228,7 +359,7 @@ func testHttpEndpointsHealth(t *testing.T, urlSpecList string) {
 	}
 }
 
-func TestHttpSendEnpointsHealth(t *testing.T) {
+func TestHttpSendEnpointsBecomingHealthy(t *testing.T) {
 	for _, urlSpecList := range []string{
 		"http://1.1.1.1:8080",
 		"http://1.1.1.1:8080,http://1.1.1.2:8080",
@@ -237,7 +368,7 @@ func TestHttpSendEnpointsHealth(t *testing.T) {
 		t.Run(
 			fmt.Sprintf("urlSpecList=%s", urlSpecList),
 			func(t *testing.T) {
-				testHttpEndpointsHealth(t, urlSpecList)
+				testHttpEndpointsBecomingHealthy(t, urlSpecList)
 			},
 		)
 	}
