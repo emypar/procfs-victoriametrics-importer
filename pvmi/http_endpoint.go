@@ -44,6 +44,7 @@ type HttpEndpoints struct {
 	healthy      *list.List
 	unhealthy    *list.List
 	importUrlMap map[string]*HttpEndpoint
+	numEndpoints int
 }
 
 func NewHttpEndpoints() *HttpEndpoints {
@@ -60,6 +61,23 @@ func (eps *HttpEndpoints) Counts() (int, int) {
 	defer eps.m.Unlock()
 
 	return eps.healthy.Len(), eps.unhealthy.Len()
+}
+
+// Build from a spec list, see http_endpoint_spec_parser.go:
+func NewHttpEndpointsFromSpec(urlSpecList string) (*HttpEndpoints, error) {
+	urlPairList, err := ParseEndpointSpec(urlSpecList)
+	if err != nil {
+		return nil, err
+	}
+	if len(urlPairList) == 0 {
+		return nil, fmt.Errorf("empty HTTP endpoint list")
+	}
+	eps := NewHttpEndpoints()
+	for _, urlPair := range urlPairList {
+		eps.AddHttpUrls(urlPair.importUrl, urlPair.healthUrl)
+	}
+	eps.numEndpoints = len(eps.importUrlMap)
+	return eps, nil
 }
 
 // New URLs are added by default to the unhealthy list:
@@ -79,6 +97,7 @@ func (eps *HttpEndpoints) AddHttpUrls(importUrl, healthUrl string) {
 	}
 	ep.listElement = ep.list.PushBack(ep)
 	eps.importUrlMap[importUrl] = ep
+	eps.numEndpoints = len(eps.importUrlMap)
 }
 
 // Retrieve the next URL to use in a LRU fashion:
@@ -102,7 +121,7 @@ func (eps *HttpEndpoints) MarkImportUrlUnhealthy(importUrl string) *HttpEndpoint
 	// Check against non-member or already marked:
 	ep := eps.importUrlMap[importUrl]
 	if ep == nil || ep.list == eps.unhealthy {
-		return ep
+		return nil
 	}
 	ep.list.Remove(ep.listElement)
 	ep.list = eps.unhealthy

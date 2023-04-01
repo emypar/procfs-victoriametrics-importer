@@ -32,36 +32,3 @@ type NewMockableTimerFn func(time.Duration, string) MockableTimer
 func NewRealTimer(d time.Duration, id string) MockableTimer {
 	return MockableTimer(&RealTimer{time.NewTimer(d)})
 }
-
-type MockTimer struct {
-	C       chan time.Time
-	running bool
-}
-
-func (m *MockTimer) GetChannel() <-chan time.Time {
-	return m.C
-}
-
-func (m *MockTimer) Reset(d time.Duration) {
-	m.running = true
-}
-
-func (m *MockTimer) Stop() bool {
-	wasRunning := m.running
-	m.running = false
-	return wasRunning
-}
-
-func (m *MockTimer) Fire() {
-	if m.running {
-		m.running = false
-		m.C <- time.Time{}
-	}
-}
-
-func NewMockTimer(d time.Duration, id string) *MockTimer {
-	return &MockTimer{
-		C:       make(chan time.Time, 1),
-		running: true,
-	}
-}
