@@ -277,20 +277,13 @@ func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 }
 
 func (pool *HttpSenderPool) Start() error {
-	// Upon creation all endpoints are marked unhealthy; start the health checkers.
-
-	for e := pool.endPoints.unhealthy.Front(); e != nil; {
-		// Since health check may move the unhealthy elements to another, the
-		// usual unhealthy first, next approach may not work, unless the next
-		// element is retrieved first!
-		e_next := e.Next()
-		ep := e.Value.(*HttpEndpoint)
+	// Upon creation all endpoints are marked unhealthy; start the health checkers.s
+	for _, ep := range pool.endPoints.GetUnhealthyEndpoints() {
 		err := pool.StartHealthCheck(ep)
 		if err != nil {
 			pool.Stop()
 			return err
 		}
-		e = e_next
 	}
 	return nil
 }

@@ -146,6 +146,28 @@ func (eps *HttpEndpoints) MarkHttpEndpointHealthy(ep *HttpEndpoint) {
 	ep.listElement = ep.list.PushBack(ep)
 }
 
+func (eps *HttpEndpoints) GetUnhealthyEndpoints() []*HttpEndpoint {
+	eps.m.Lock()
+	defer eps.m.Unlock()
+
+	endpointList := make([]*HttpEndpoint, eps.unhealthy.Len())
+	for i, e := 0, eps.unhealthy.Front(); e != nil; i, e = i+1, e.Next() {
+		endpointList[i] = e.Value.(*HttpEndpoint)
+	}
+	return endpointList
+}
+
+func (eps *HttpEndpoints) GetHealthyEndpoints() []*HttpEndpoint {
+	eps.m.Lock()
+	defer eps.m.Unlock()
+
+	endpointList := make([]*HttpEndpoint, eps.healthy.Len())
+	for i, e := 0, eps.healthy.Front(); e != nil; i, e = i+1, e.Next() {
+		endpointList[i] = e.Value.(*HttpEndpoint)
+	}
+	return endpointList
+}
+
 func (eps *HttpEndpoints) PrintImportLists(w io.Writer) {
 	eps.m.Lock()
 	defer eps.m.Unlock()
