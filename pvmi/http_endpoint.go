@@ -76,7 +76,6 @@ func NewHttpEndpointsFromSpec(urlSpecList string) (*HttpEndpoints, error) {
 	for _, urlPair := range urlPairList {
 		eps.AddHttpUrls(urlPair.importUrl, urlPair.healthUrl)
 	}
-	eps.numEndpoints = len(eps.importUrlMap)
 	return eps, nil
 }
 
@@ -100,8 +99,12 @@ func (eps *HttpEndpoints) AddHttpUrls(importUrl, healthUrl string) {
 	eps.numEndpoints = len(eps.importUrlMap)
 }
 
+func (eps *HttpEndpoints) NumEndpoints() int {
+	return eps.numEndpoints
+}
+
 // Retrieve the next URL to use in a LRU fashion:
-func (eps *HttpEndpoints) GetImportUrl() string {
+func (eps *HttpEndpoints) GetImportUrl(peekOnly bool) string {
 	eps.m.Lock()
 	defer eps.m.Unlock()
 
@@ -110,7 +113,9 @@ func (eps *HttpEndpoints) GetImportUrl() string {
 	if listElement == nil {
 		return ""
 	}
-	list.MoveToBack(listElement)
+	if !peekOnly {
+		list.MoveToBack(listElement)
+	}
 	return listElement.Value.(*HttpEndpoint).importUrl
 }
 

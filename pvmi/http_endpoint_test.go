@@ -32,7 +32,7 @@ func TestHttpEndpointNewHttpEndpoints(t *testing.T) {
 
 	{
 		want := ""
-		got := eps.GetImportUrl()
+		got := eps.GetImportUrl(false)
 		if want != got {
 			t.Fatalf("GetImportUrl(): want: %#v, got: %#v", want, got)
 		}
@@ -118,7 +118,7 @@ func testHttpEndpointGetImportUrl(t *testing.T, start, end int) {
 
 	for i := 0; i < 3*(end-start)+1; i++ {
 		want := HTTP_ENDPOINT_TEST_URLS[start+i%(end-start)]
-		got := eps.GetImportUrl()
+		got := eps.GetImportUrl(false)
 		if want != got {
 			t.Fatalf("GetImportUrl(i#%d): want: %#v, got: %#v", i, want, got)
 		}

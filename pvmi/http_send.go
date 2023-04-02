@@ -200,7 +200,7 @@ type HttpClientDoer interface {
 // The sender pool:
 type HttpSenderPool struct {
 	// Endpoints:
-	endPoints *HttpEndpoints
+	*HttpEndpoints
 
 	// HTTP client, can be a mock during testing:
 	httpClient HttpClientDoer
@@ -218,9 +218,9 @@ type HttpSenderPool struct {
 
 	// The logistics for stopping running health check goroutines, needed during
 	// testing:
-	healthCheckCtx      context.Context
-	healthCheckCancelFn context.CancelFunc
-	healthCheckWg       *sync.WaitGroup
+	poolCtx       context.Context
+	poolCancelFn  context.CancelFunc
+	healthCheckWg *sync.WaitGroup
 
 	// The new timer creation function, can be a mock during testing:
 	newTimerFn NewMockableTimerFn
@@ -259,16 +259,16 @@ func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 		newTimerFn = NewRealTimer
 	}
 
-	healthCheckCtx, healthCheckCancelFn := context.WithCancel(context.Background())
+	poolCtx, poolCancelFn := context.WithCancel(context.Background())
 
 	pool := &HttpSenderPool{
-		endPoints:               eps,
+		HttpEndpoints:           eps,
 		httpClient:              httpClient,
 		healthCheckPause:        config.healthCheckPause,
 		getImportUrlMaxAttempts: config.getImportUrlMaxAttempts,
 		logNthCheckFailure:      config.logNthCheckFailure,
-		healthCheckCtx:          healthCheckCtx,
-		healthCheckCancelFn:     healthCheckCancelFn,
+		poolCtx:                 poolCtx,
+		poolCancelFn:            poolCancelFn,
 		healthCheckWg:           &sync.WaitGroup{},
 		newTimerFn:              newTimerFn,
 	}
@@ -278,7 +278,7 @@ func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 
 func (pool *HttpSenderPool) Start() error {
 	// Upon creation all endpoints are marked unhealthy; start the health checkers.s
-	for _, ep := range pool.endPoints.GetUnhealthyEndpoints() {
+	for _, ep := range pool.GetUnhealthyEndpoints() {
 		err := pool.StartHealthCheck(ep)
 		if err != nil {
 			pool.Stop()
@@ -297,17 +297,13 @@ func StartNewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 }
 
 func (pool *HttpSenderPool) Stop() {
-	pool.healthCheckCancelFn()
+	pool.poolCancelFn()
 	pool.healthCheckWg.Wait()
 	Log.Info("Sender pool stopped")
 }
 
-func (pool *HttpSenderPool) GetImportUrl() string {
-	return pool.endPoints.GetImportUrl()
-}
-
-func (pool *HttpSenderPool) MarkImportUrlUnhealthy(importUrl string) error {
-	ep := pool.endPoints.MarkImportUrlUnhealthy(importUrl)
+func (pool *HttpSenderPool) DeclareImportUrlUnhealthy(importUrl string) error {
+	ep := pool.MarkImportUrlUnhealthy(importUrl)
 	if ep == nil {
 		// Already marked:
 		return nil
@@ -319,7 +315,7 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 	importUrl, healthUrl := ep.importUrl, ep.healthUrl
 	healthCheckPause := pool.healthCheckPause
 	logNthCheckFailure := pool.logNthCheckFailure
-	healthCheckCtx := pool.healthCheckCtx
+	poolCtx := pool.poolCtx
 	healthCheckWg := pool.healthCheckWg
 	httpClient := pool.httpClient
 	newTimerFn := pool.newTimerFn
@@ -330,7 +326,7 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 		return err
 	}
 
-	Log.Infof("%s: Start health check", importUrl)
+	Log.Infof("%s: Start health check using: %s", importUrl, healthUrl)
 	checkFailureN, logCheckFailure := 0, false
 	response, err := httpClient.Do(request)
 	if response != nil && response.Body != nil {
@@ -338,7 +334,7 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 	}
 	if err == nil && response.StatusCode == http.StatusOK {
 		Log.Infof("%s: Healthy", importUrl)
-		pool.endPoints.MarkHttpEndpointHealthy(ep)
+		pool.MarkHttpEndpointHealthy(ep)
 		return nil
 	}
 	logCheckFailure = true
@@ -367,7 +363,7 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 			prevResponse, prevErr := response, err
 
 			select {
-			case <-healthCheckCtx.Done():
+			case <-poolCtx.Done():
 				return
 			case <-timerC:
 			}
@@ -379,7 +375,7 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 			}
 			if err == nil && response.StatusCode == http.StatusOK {
 				Log.Infof("%s: Healthy", importUrl)
-				pool.endPoints.MarkHttpEndpointHealthy(ep)
+				pool.MarkHttpEndpointHealthy(ep)
 				return
 			}
 
@@ -399,37 +395,54 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 	return nil
 }
 
-func (pool *HttpSenderPool) Sender(
+func (pool *HttpSenderPool) Send(
 	buf *bytes.Buffer,
 	bufPool *BufferPool,
 	contentEncoding string,
 ) {
+	var timer MockableTimer // Will be set JIT
+
 	defer func() {
 		if bufPool != nil {
 			bufPool.ReturnBuffer(buf)
+		}
+		if timer != nil {
+			if !timer.Stop() {
+				<-timer.GetChannel()
+			}
 		}
 	}()
 
 	method := http.MethodPut
 	contentEncodingHeader := []string{contentEncoding}
-	contentLengthHeader := []string{strconv.FormatInt(int64(buf.Len()), 10)}
+	contentLengthHeader := []string{strconv.Itoa(buf.Len())}
 	bufId := "" // Will be set JIT
 	// Make as many attempts as there are endpoints, since one can transition to
 	// unhealthy while being used:
-	numEndpoints := pool.endPoints.numEndpoints
+	numEndpoints := pool.NumEndpoints()
 	// Wait slightly > health check interval for an URL to become healthy:
 	waitHealthyPause := pool.healthCheckPause + 20*time.Millisecond
 	getImportUrlMaxAttempts := pool.getImportUrlMaxAttempts
+	body := bytes.NewReader(buf.Bytes())
+	poolCtx := pool.poolCtx
 	for n := 0; n < numEndpoints; n++ {
 		// Wait until a usable URL:
-		importUrl := pool.GetImportUrl()
+		importUrl := pool.GetImportUrl(false)
 		for n := 0; importUrl == "" && n < getImportUrlMaxAttempts; n++ {
 			if bufId == "" {
+				Log.Warnf("Waiting for a healthy import URL")
 				bufId = fmt.Sprintf("Sender(%p)", buf)
+				timer = pool.newTimerFn(waitHealthyPause, bufId)
+			} else {
+				timer.Reset(waitHealthyPause)
 			}
-			// Note: use the mockable timer in case of testing:
-			<-pool.newTimerFn(waitHealthyPause, bufId).GetChannel()
-			importUrl = pool.GetImportUrl()
+			select {
+			case <-poolCtx.Done():
+				Log.Warnf("Send cancelled")
+				return
+			case <-timer.GetChannel():
+			}
+			importUrl = pool.GetImportUrl(false)
 		}
 		if importUrl == "" {
 			Log.Warnf(
@@ -439,10 +452,11 @@ func (pool *HttpSenderPool) Sender(
 		}
 
 		// Build the request; if that fails then there is no point trying again:
+		body.Seek(0, io.SeekStart)
 		request, err := http.NewRequest(
 			method,
 			importUrl,
-			buf,
+			body,
 		)
 		if err != nil {
 			Log.Errorf(
@@ -467,14 +481,13 @@ func (pool *HttpSenderPool) Sender(
 			return
 		}
 
-		// Send to this import URL failed, report the error and mark the
-		// endpoint as unhealthy:
+		// Send failed, report the error and declare the endpoint as unhealthy:
 		if err != nil {
 			Log.Warnf("%s %s: %s", method, importUrl, err)
 		} else {
 			Log.Warnf("%s %s: %s", method, importUrl, response.Status)
 		}
-		err = pool.MarkImportUrlUnhealthy(importUrl)
+		err = pool.DeclareImportUrlUnhealthy(importUrl)
 		if err != nil {
 			Log.Warnf("Fail to mark %s unhealthy: %s", importUrl, err)
 		}

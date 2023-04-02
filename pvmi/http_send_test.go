@@ -3,6 +3,7 @@
 package pvmi
 
 import (
+	"bytes"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,13 @@ const (
 	) + 1
 )
 
+var TestHttpSendUrlSpecList = []string{
+	"http://1.1.1.0:8080",
+	"http://1.1.1.0:8080,http://1.1.1.1:8080",
+	"http://1.1.1.0:8080,http://1.1.1.1:8080,http://1.1.1.2:8080",
+	"(http://1.1.1.0:8080/import,http://1.1.1.0:8080/health),http://1.1.1.1:8080,http://1.1.1.2:8080",
+}
+
 type MockHttpResponseErr struct {
 	response *http.Response
 	err      error
@@ -29,13 +37,13 @@ type MockHttpResponseErr struct {
 
 type HttpClientDoerMock struct {
 	responseErrByMethodByUrl map[string]map[string]*MockHttpResponseErr
-	requestBodyByMethodByUrl map[string]map[string][]byte
+	requestBodyByMethodByUrl map[string]map[string][][]byte
 }
 
 func NewHttpClientDoerMock() *HttpClientDoerMock {
 	return &HttpClientDoerMock{
 		responseErrByMethodByUrl: make(map[string]map[string]*MockHttpResponseErr),
-		requestBodyByMethodByUrl: make(map[string]map[string][]byte),
+		requestBodyByMethodByUrl: make(map[string]map[string][][]byte),
 	}
 }
 
@@ -58,7 +66,7 @@ func (m *HttpClientDoerMock) setReqResponse(
 		err,
 	}
 	if m.requestBodyByMethodByUrl[method] == nil {
-		m.requestBodyByMethodByUrl[method] = make(map[string][]byte)
+		m.requestBodyByMethodByUrl[method] = make(map[string][][]byte)
 	}
 }
 
@@ -78,7 +86,27 @@ func (m *HttpClientDoerMock) setGetResponse(
 		err,
 	}
 	if m.requestBodyByMethodByUrl[method] == nil {
-		m.requestBodyByMethodByUrl[method] = make(map[string][]byte)
+		m.requestBodyByMethodByUrl[method] = make(map[string][][]byte)
+	}
+}
+
+func (m *HttpClientDoerMock) setPutResponse(
+	url string,
+	response *http.Response,
+	err error,
+) {
+	method := http.MethodPut
+	response_by_url := m.responseErrByMethodByUrl[method]
+	if response_by_url == nil {
+		response_by_url = make(map[string]*MockHttpResponseErr)
+		m.responseErrByMethodByUrl[method] = response_by_url
+	}
+	response_by_url[url] = &MockHttpResponseErr{
+		response,
+		err,
+	}
+	if m.requestBodyByMethodByUrl[method] == nil {
+		m.requestBodyByMethodByUrl[method] = make(map[string][][]byte)
 	}
 }
 
@@ -114,12 +142,16 @@ func (m *HttpClientDoerMock) Do(req *http.Request) (*http.Response, error) {
 	if response.Proto == "" {
 		response.Proto = fmt.Sprintf("HTTP%d/%d", response.ProtoMajor, response.ProtoMinor)
 	}
-	if req.Body != nil {
+	if responseErr.response.StatusCode == http.StatusOK &&
+		responseErr.err == nil && req.Body != nil {
 		body, err := io.ReadAll(req.Body)
 		if err != nil {
 			return nil, err
 		}
-		m.requestBodyByMethodByUrl[req.Method][req.URL.String()] = body
+		m.requestBodyByMethodByUrl[req.Method][req.URL.String()] = append(
+			m.requestBodyByMethodByUrl[req.Method][req.URL.String()],
+			body,
+		)
 	}
 	return &response, err
 }
@@ -224,7 +256,7 @@ func prepareHttpSenderPoolForTest(
 		allRegistered = true
 
 		foundHealthyImportUrls := make(map[string]bool)
-		for _, ep := range pool.endPoints.GetHealthyEndpoints() {
+		for _, ep := range pool.GetHealthyEndpoints() {
 			foundHealthyImportUrls[ep.importUrl] = true
 		}
 		for i, _ := range healthyIndexSet {
@@ -289,17 +321,14 @@ func indexListToString(indexList []int) string {
 }
 
 func TestHttpSendPoolStart(t *testing.T) {
-	for _, urlSpecList := range []string{
-		"http://1.1.1.1:8080",
-		"http://1.1.1.1:8080,http://1.1.1.2:8080",
-		"http://1.1.1.1:8080,http://1.1.1.2:8080,http://1.1.1.3:8080",
-		"(http://1.1.1.1:8080/import,http://1.1.1.1:8080/health),http://1.1.1.2:8080,http://1.1.1.3:8080",
-	} {
+	for _, urlSpecList := range TestHttpSendUrlSpecList {
 		importHealthUrlPairs, err := ParseEndpointSpec(urlSpecList)
 		if err != nil {
 			t.Log(err)
 			continue
 		}
+
+		allIndex := []int{-1}
 
 		for mask := 0; mask < 1<<len(importHealthUrlPairs); mask++ {
 			startHealthyIndexList := makeIndexList(mask)
@@ -314,6 +343,16 @@ func TestHttpSendPoolStart(t *testing.T) {
 				},
 			)
 		}
+		t.Run(
+			fmt.Sprintf(
+				"urlSpecList=%s,startHealthyIndexList=%s",
+				urlSpecList,
+				indexListToString(allIndex),
+			),
+			func(t *testing.T) {
+				testHttpSendPoolStart(t, urlSpecList, allIndex)
+			},
+		)
 	}
 }
 
@@ -336,7 +375,7 @@ func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHea
 
 	// Each health checker is stopped in next check timer. Trigger them one by
 	// one and expect the relevant import URL to be marked healthy:
-	unhealthyEndpoints := pool.endPoints.GetUnhealthyEndpoints()
+	unhealthyEndpoints := pool.GetUnhealthyEndpoints()
 
 	for _, ep := range unhealthyEndpoints {
 		importUrl, healthUrl := ep.importUrl, ep.healthUrl
@@ -352,7 +391,7 @@ func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHea
 			if pollN > 0 {
 				time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
 			}
-			for _, ep := range pool.endPoints.GetUnhealthyEndpoints() {
+			for _, ep := range pool.GetUnhealthyEndpoints() {
 				if ep.importUrl == importUrl {
 					found = true
 					break
@@ -366,12 +405,7 @@ func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHea
 }
 
 func TestHttpSendEnpointsBecomingHealthy(t *testing.T) {
-	for _, urlSpecList := range []string{
-		"http://1.1.1.1:8080",
-		"http://1.1.1.1:8080,http://1.1.1.2:8080",
-		"http://1.1.1.1:8080,http://1.1.1.2:8080,http://1.1.1.3:8080",
-		"(http://1.1.1.1:8080/import,http://1.1.1.1:8080/health),http://1.1.1.2:8080,http://1.1.1.3:8080",
-	} {
+	for _, urlSpecList := range TestHttpSendUrlSpecList {
 		importHealthUrlPairs, err := ParseEndpointSpec(urlSpecList)
 		if err != nil {
 			t.Log(err)
@@ -390,6 +424,109 @@ func TestHttpSendEnpointsBecomingHealthy(t *testing.T) {
 					testHttpEndpointsBecomingHealthy(t, urlSpecList, startHealthyIndexList)
 				},
 			)
+		}
+	}
+}
+
+func testHttpSendOK(
+	t *testing.T,
+	urlSpecList string,
+	startHealthyIndexList []int,
+	doFailover bool,
+) {
+	if len(startHealthyIndexList) == 0 {
+		return
+	}
+
+	pool, _, err := prepareHttpSenderPoolForTest(
+		urlSpecList, startHealthyIndexList,
+	)
+
+	defer func() {
+		if pool != nil {
+			pool.Stop()
+		}
+	}()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	healthyEndpoints := pool.GetHealthyEndpoints()
+	if doFailover && len(healthyEndpoints) < 2 {
+		return
+	}
+
+	httpClientDoerMock := pool.httpClient.(*HttpClientDoerMock)
+	for i, ep := range healthyEndpoints {
+		var response *http.Response
+		if doFailover && i < len(healthyEndpoints)-1 {
+			response = &http.Response{StatusCode: http.StatusGone}
+		} else {
+			response = &http.Response{StatusCode: http.StatusOK}
+		}
+		httpClientDoerMock.setGetResponse(ep.healthUrl, response, nil)
+		httpClientDoerMock.setPutResponse(ep.importUrl, response, nil)
+	}
+
+	testDataMap := make(map[string]bool)
+	for i := 0; i < 2*pool.NumEndpoints(); i++ {
+		testDataMap[fmt.Sprintf("Test data# %d", i)] = true
+	}
+
+	for testData, _ := range testDataMap {
+		buf := &bytes.Buffer{}
+		buf.WriteString(testData)
+		pool.Send(buf, nil, "")
+	}
+
+	requestBodyMap := httpClientDoerMock.requestBodyByMethodByUrl[http.MethodPut]
+	if requestBodyMap == nil {
+		t.Fatalf("No requests were made")
+	}
+
+	for _, requestBodyList := range requestBodyMap {
+		for _, requestBody := range requestBodyList {
+			body := string(requestBody)
+			if !testDataMap[body] {
+				t.Errorf("Unexpected/duplicated request: %s", body)
+			} else {
+				delete(testDataMap, body)
+			}
+		}
+	}
+
+	for body, _ := range testDataMap {
+		t.Errorf("missing request: %s", body)
+	}
+}
+
+func TestHttpSendOK(t *testing.T) {
+	for _, urlSpecList := range TestHttpSendUrlSpecList {
+		importHealthUrlPairs, err := ParseEndpointSpec(urlSpecList)
+		if err != nil {
+			t.Log(err)
+			continue
+		}
+
+		for mask := 1; mask < 1<<len(importHealthUrlPairs); mask++ {
+			startHealthyIndexList := makeIndexList(mask)
+			for _, doFailover := range []bool{false, true} {
+				if doFailover && len(startHealthyIndexList) < 2 {
+					continue
+				}
+				t.Run(
+					fmt.Sprintf(
+						"urlSpecList=%s,startHealthyIndexList=%s,doFailover=%v",
+						urlSpecList,
+						indexListToString(startHealthyIndexList),
+						doFailover,
+					),
+					func(t *testing.T) {
+						testHttpSendOK(t, urlSpecList, startHealthyIndexList, doFailover)
+					},
+				)
+			}
 		}
 	}
 }
