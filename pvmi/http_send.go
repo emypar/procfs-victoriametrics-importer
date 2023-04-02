@@ -445,7 +445,7 @@ func (pool *HttpSenderPool) Send(
 		}
 		if importUrl == "" {
 			return fmt.Errorf(
-				"Could not get a healthy import URL after %d attempts, buffer discarded",
+				"could not get a healthy import URL after %d attempts, buffer discarded",
 				getImportUrlMaxAttempts,
 			)
 		}
@@ -458,13 +458,6 @@ func (pool *HttpSenderPool) Send(
 			body,
 		)
 		if err != nil {
-			Log.Errorf(
-				"http.NewRequest(%s, %s, buf(%d bytes): %s",
-				method,
-				importUrl,
-				buf.Len(),
-				err,
-			)
 			return err
 		}
 		if contentEncoding != "" {

@@ -132,28 +132,29 @@ func (m *HttpClientDoerMock) getResponseErr(req *http.Request) *MockHttpResponse
 
 func (m *HttpClientDoerMock) Do(req *http.Request) (*http.Response, error) {
 	responseErr := m.getResponseErr(req)
-	response, err := *responseErr.response, responseErr.err
-	if response.Status == "" {
-		response.Status = fmt.Sprintf("%d %s", response.StatusCode, http.StatusText(response.StatusCode))
-	}
-	if response.ProtoMajor == 0 {
-		response.ProtoMajor = 1
-	}
-	if response.Proto == "" {
-		response.Proto = fmt.Sprintf("HTTP%d/%d", response.ProtoMajor, response.ProtoMinor)
-	}
-	if responseErr.response.StatusCode == http.StatusOK &&
-		responseErr.err == nil && req.Body != nil {
-		body, err := io.ReadAll(req.Body)
-		if err != nil {
-			return nil, err
+	response, err := responseErr.response, responseErr.err
+	if response != nil {
+		if response.Status == "" {
+			response.Status = fmt.Sprintf("%d %s", response.StatusCode, http.StatusText(response.StatusCode))
 		}
-		m.requestBodyByMethodByUrl[req.Method][req.URL.String()] = append(
-			m.requestBodyByMethodByUrl[req.Method][req.URL.String()],
-			body,
-		)
+		if response.ProtoMajor == 0 {
+			response.ProtoMajor = 1
+		}
+		if response.Proto == "" {
+			response.Proto = fmt.Sprintf("HTTP%d/%d", response.ProtoMajor, response.ProtoMinor)
+		}
+		if response.StatusCode == http.StatusOK && err == nil && req.Body != nil {
+			body, err := io.ReadAll(req.Body)
+			if err != nil {
+				return nil, err
+			}
+			m.requestBodyByMethodByUrl[req.Method][req.URL.String()] = append(
+				m.requestBodyByMethodByUrl[req.Method][req.URL.String()],
+				body,
+			)
+		}
 	}
-	return &response, err
+	return response, err
 }
 
 type MockableTimers struct {
@@ -459,14 +460,21 @@ func testHttpSendOK(
 
 	httpClientDoerMock := pool.httpClient.(*HttpClientDoerMock)
 	for i, ep := range healthyEndpoints {
-		var response *http.Response
 		if doFailover && i < len(healthyEndpoints)-1 {
-			response = &http.Response{StatusCode: http.StatusGone}
+			// Alternate the failure HTTP != OK v. error:
+			if i&1 == 0 {
+				response := &http.Response{StatusCode: http.StatusGone}
+				httpClientDoerMock.setGetResponse(ep.healthUrl, response, nil)
+				httpClientDoerMock.setPutResponse(ep.importUrl, response, nil)
+			} else {
+				httpClientDoerMock.setGetResponse(ep.healthUrl, nil, fmt.Errorf("%s: dial error", ep.healthUrl))
+				httpClientDoerMock.setPutResponse(ep.importUrl, nil, fmt.Errorf("%s: dial error", ep.importUrl))
+			}
 		} else {
-			response = &http.Response{StatusCode: http.StatusOK}
+			response := &http.Response{StatusCode: http.StatusOK}
+			httpClientDoerMock.setGetResponse(ep.healthUrl, response, nil)
+			httpClientDoerMock.setPutResponse(ep.importUrl, response, nil)
 		}
-		httpClientDoerMock.setGetResponse(ep.healthUrl, response, nil)
-		httpClientDoerMock.setPutResponse(ep.importUrl, response, nil)
 	}
 
 	testDataMap := make(map[string]bool)
