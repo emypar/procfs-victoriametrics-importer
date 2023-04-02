@@ -39,7 +39,7 @@ const (
 	COMPRESSOR_ID_ALL = -1
 )
 
-type CompressorSenderFunction func(*bytes.Buffer, *BufferPool, string)
+type CompressorSenderFunction func(*bytes.Buffer, *BufferPool, string) error
 
 type CompressorStats struct {
 	m                 *sync.Mutex
@@ -279,7 +279,10 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 				gzWriter.Close()
 				nCompressedBytes := gzBuf.Len()
 				if senderFn != nil {
-					senderFn(gzBuf, bufPool, contentEncoding)
+					err := senderFn(gzBuf, bufPool, contentEncoding)
+					if err != nil {
+						Log.Warn(err)
+					}
 				} else if bufPool != nil {
 					bufPool.ReturnBuffer(gzBuf)
 				} else {

@@ -477,7 +477,10 @@ func testHttpSendOK(
 	for testData, _ := range testDataMap {
 		buf := &bytes.Buffer{}
 		buf.WriteString(testData)
-		pool.Send(buf, nil, "")
+		err := pool.Send(buf, nil, "")
+		if err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	requestBodyMap := httpClientDoerMock.requestBodyByMethodByUrl[http.MethodPut]

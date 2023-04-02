@@ -399,7 +399,7 @@ func (pool *HttpSenderPool) Send(
 	buf *bytes.Buffer,
 	bufPool *BufferPool,
 	contentEncoding string,
-) {
+) error {
 	var timer MockableTimer // Will be set JIT
 
 	defer func() {
@@ -438,14 +438,13 @@ func (pool *HttpSenderPool) Send(
 			}
 			select {
 			case <-poolCtx.Done():
-				Log.Warnf("Send cancelled")
-				return
+				return fmt.Errorf("Send cancelled")
 			case <-timer.GetChannel():
 			}
 			importUrl = pool.GetImportUrl(false)
 		}
 		if importUrl == "" {
-			Log.Warnf(
+			return fmt.Errorf(
 				"Could not get a healthy import URL after %d attempts, buffer discarded",
 				getImportUrlMaxAttempts,
 			)
@@ -466,7 +465,7 @@ func (pool *HttpSenderPool) Send(
 				buf.Len(),
 				err,
 			)
-			return
+			return err
 		}
 		if contentEncoding != "" {
 			request.Header["Content-Encoding"] = contentEncodingHeader
@@ -478,7 +477,7 @@ func (pool *HttpSenderPool) Send(
 			io.ReadAll(response.Body)
 		}
 		if err == nil && response.StatusCode == http.StatusOK {
-			return
+			break
 		}
 
 		// Send failed, report the error and declare the endpoint as unhealthy:
@@ -489,7 +488,8 @@ func (pool *HttpSenderPool) Send(
 		}
 		err = pool.DeclareImportUrlUnhealthy(importUrl)
 		if err != nil {
-			Log.Warnf("Fail to mark %s unhealthy: %s", importUrl, err)
+			return err
 		}
 	}
+	return nil
 }

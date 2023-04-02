@@ -31,7 +31,7 @@ type CompressorTestCase struct {
 // buffer:
 func makeTestCompressorSenderFn(collectBuf *bytes.Buffer) CompressorSenderFunction {
 	m := &sync.Mutex{}
-	return func(gzBuf *bytes.Buffer, bufPool *BufferPool, contentEncoding string) {
+	return func(gzBuf *bytes.Buffer, bufPool *BufferPool, contentEncoding string) error {
 		m.Lock()
 		defer m.Unlock()
 		if contentEncoding == "gzip" {
@@ -44,6 +44,7 @@ func makeTestCompressorSenderFn(collectBuf *bytes.Buffer) CompressorSenderFuncti
 		if bufPool != nil {
 			bufPool.ReturnBuffer(gzBuf)
 		}
+		return nil
 	}
 }
 
