@@ -342,6 +342,7 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 	logCheckFailure = true
 
 	timer := newTimerFn(healthCheckPause, importUrl)
+	healthCheckWg.Add(1)
 	go func() {
 		defer func() {
 			Log.Infof("%s: Stop health check", importUrl)
@@ -392,7 +393,6 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 
 	}()
 
-	healthCheckWg.Add(1)
 	return nil
 }
 
