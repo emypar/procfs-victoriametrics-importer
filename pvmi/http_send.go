@@ -17,8 +17,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/eparparita/procfs-victoriametrics-importer/utils"
 )
 
 const (
@@ -159,7 +157,7 @@ type HttpSendConfig struct {
 
 	// The timer creation function, used for testing. If nil then NewRealTimer
 	// is used:
-	newTimerFn utils.NewMockableTimerFn
+	newTimerFn NewMockableTimerFn
 }
 
 func BuildHttpSendConfigFromArgs() *HttpSendConfig {
@@ -225,7 +223,7 @@ type HttpSenderPool struct {
 	healthCheckWg *sync.WaitGroup
 
 	// The new timer creation function, can be a mock during testing:
-	newTimerFn utils.NewMockableTimerFn
+	newTimerFn NewMockableTimerFn
 }
 
 func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
@@ -258,7 +256,7 @@ func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 	}
 	newTimerFn := config.newTimerFn
 	if newTimerFn == nil {
-		newTimerFn = utils.NewRealTimer
+		newTimerFn = NewRealTimer
 	}
 
 	poolCtx, poolCancelFn := context.WithCancel(context.Background())
@@ -401,7 +399,7 @@ func (pool *HttpSenderPool) Send(
 	bufPool *BufferPool,
 	contentEncoding string,
 ) error {
-	var timer utils.MockableTimer // Will be set JIT
+	var timer MockableTimer // Will be set JIT
 
 	defer func() {
 		if bufPool != nil {

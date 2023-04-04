@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"sync"
 	"time"
-
-	"github.com/eparparita/procfs-victoriametrics-importer/utils"
 )
 
 const (
@@ -102,7 +100,7 @@ func NewMockTimePool() *MockTimerPool {
 	}
 }
 
-func (p *MockTimerPool) NewMockTimer(d time.Duration, id string) utils.MockableTimer {
+func (p *MockTimerPool) NewMockTimer(d time.Duration, id string) *MockTimer {
 	p.m.Lock()
 	defer p.m.Unlock()
 	timer := p.timers[id]
@@ -112,7 +110,7 @@ func (p *MockTimerPool) NewMockTimer(d time.Duration, id string) utils.MockableT
 	} else {
 		timer.Reset(d)
 	}
-	return MockableTimer(timer)
+	return timer
 }
 
 func (p *MockTimerPool) Fire(id string, maxWait time.Duration) (err error) {
