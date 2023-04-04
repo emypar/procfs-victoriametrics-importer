@@ -1,6 +1,6 @@
 // time package function re-directors useful for test mocking
 
-package pvmi
+package utils
 
 import "time"
 

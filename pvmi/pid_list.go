@@ -8,8 +8,6 @@ import (
 	"strconv"
 	"sync"
 	"time"
-
-	"github.com/sirupsen/logrus"
 )
 
 const (
@@ -73,7 +71,7 @@ func NewPidListCache(nPart int, validFor time.Duration, root string, flags uint3
 	return &PidListCache{
 		nPart:         nPart,
 		mask:          mask,
-		retrievedTime: TimeNow().Add(-2 * validFor), // this should force a refresh at the next call
+		retrievedTime: time.Now().Add(-2 * validFor), // this should force a refresh at the next call
 		validFor:      validFor,
 		flags:         flags,
 		root:          root,
@@ -106,17 +104,6 @@ func (c *PidListCache) Refresh(lockAcquired bool) {
 	if !lockAcquired {
 		c.lock.Lock()
 		defer c.lock.Unlock()
-	}
-
-	startTime := time.Now()
-	traceEnabled := Log.IsLevelEnabled(logrus.TraceLevel)
-	if traceEnabled {
-		Log.Tracef(
-			"PidListCache: now: %s, retrievedTime: %s, validFor: %s, do refresh",
-			startTime.Format(ISO8601Micro),
-			c.retrievedTime.Format(ISO8601Micro),
-			c.validFor,
-		)
 	}
 
 	c.pidLists = make([][]PidTidPair, c.nPart)
@@ -173,11 +160,7 @@ func (c *PidListCache) Refresh(lockAcquired bool) {
 			}
 		}
 	}
-	c.retrievedTime = TimeNow()
-	if traceEnabled {
-		elapsedTime := c.retrievedTime.Sub(startTime)
-		Log.Tracef("PidListCache: %d entries retrieved in %s", numEntries, elapsedTime)
-	}
+	c.retrievedTime = time.Now()
 }
 
 func (c *PidListCache) GetPids(part int) []PidTidPair {
@@ -186,7 +169,7 @@ func (c *PidListCache) GetPids(part int) []PidTidPair {
 	}
 	c.lock.Lock()
 	defer c.lock.Unlock()
-	if TimeSince(c.retrievedTime) > c.validFor {
+	if time.Since(c.retrievedTime) > c.validFor {
 		c.Refresh(true)
 	}
 	return c.pidLists[part]

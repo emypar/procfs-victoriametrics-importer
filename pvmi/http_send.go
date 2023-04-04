@@ -17,6 +17,8 @@ import (
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/eparparita/procfs-victoriametrics-importer/utils"
 )
 
 const (
@@ -157,7 +159,7 @@ type HttpSendConfig struct {
 
 	// The timer creation function, used for testing. If nil then NewRealTimer
 	// is used:
-	newTimerFn NewMockableTimerFn
+	newTimerFn utils.NewMockableTimerFn
 }
 
 func BuildHttpSendConfigFromArgs() *HttpSendConfig {
@@ -223,7 +225,7 @@ type HttpSenderPool struct {
 	healthCheckWg *sync.WaitGroup
 
 	// The new timer creation function, can be a mock during testing:
-	newTimerFn NewMockableTimerFn
+	newTimerFn utils.NewMockableTimerFn
 }
 
 func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
@@ -256,7 +258,7 @@ func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 	}
 	newTimerFn := config.newTimerFn
 	if newTimerFn == nil {
-		newTimerFn = NewRealTimer
+		newTimerFn = utils.NewRealTimer
 	}
 
 	poolCtx, poolCancelFn := context.WithCancel(context.Background())
@@ -340,12 +342,8 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 	logCheckFailure = true
 
 	timer := newTimerFn(healthCheckPause, importUrl)
-	timerC := timer.GetChannel()
 	go func() {
 		defer func() {
-			if !timer.Stop() {
-				<-timerC
-			}
 			Log.Infof("%s: Stop health check", importUrl)
 			healthCheckWg.Done()
 		}()
@@ -364,8 +362,11 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 
 			select {
 			case <-poolCtx.Done():
+				if !timer.Stop() {
+					<-timer.GetChannel()
+				}
 				return
-			case <-timerC:
+			case <-timer.GetChannel():
 			}
 			timer.Reset(healthCheckPause)
 
@@ -400,16 +401,11 @@ func (pool *HttpSenderPool) Send(
 	bufPool *BufferPool,
 	contentEncoding string,
 ) error {
-	var timer MockableTimer // Will be set JIT
+	var timer utils.MockableTimer // Will be set JIT
 
 	defer func() {
 		if bufPool != nil {
 			bufPool.ReturnBuffer(buf)
-		}
-		if timer != nil {
-			if !timer.Stop() {
-				<-timer.GetChannel()
-			}
 		}
 	}()
 
@@ -431,23 +427,27 @@ func (pool *HttpSenderPool) Send(
 		for n := 0; importUrl == "" && n < getImportUrlMaxAttempts; n++ {
 			if bufId == "" {
 				Log.Warnf("Waiting for a healthy import URL")
-				bufId = fmt.Sprintf("Sender(%p)", buf)
+				bufId = fmt.Sprintf("Send(buf=%p)", buf)
 				timer = pool.newTimerFn(waitHealthyPause, bufId)
 			} else {
 				timer.Reset(waitHealthyPause)
 			}
 			select {
 			case <-poolCtx.Done():
+				if !timer.Stop() {
+					<-timer.GetChannel()
+				}
 				return fmt.Errorf("Send cancelled")
 			case <-timer.GetChannel():
 			}
 			importUrl = pool.GetImportUrl(false)
 		}
 		if importUrl == "" {
-			return fmt.Errorf(
+			err := fmt.Errorf(
 				"could not get a healthy import URL after %d attempts, buffer discarded",
 				getImportUrlMaxAttempts,
 			)
+			return err
 		}
 
 		// Build the request; if that fails then there is no point trying again:

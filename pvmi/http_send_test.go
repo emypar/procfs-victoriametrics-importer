@@ -4,8 +4,8 @@ package pvmi
 
 import (
 	"bytes"
+	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"testing"
@@ -30,147 +30,6 @@ var TestHttpSendUrlSpecList = []string{
 	"(http://1.1.1.0:8080/import,http://1.1.1.0:8080/health),http://1.1.1.1:8080,http://1.1.1.2:8080",
 }
 
-type MockHttpResponseErr struct {
-	response *http.Response
-	err      error
-}
-
-type HttpClientDoerMock struct {
-	responseErrByMethodByUrl map[string]map[string]*MockHttpResponseErr
-	requestBodyByMethodByUrl map[string]map[string][][]byte
-}
-
-func NewHttpClientDoerMock() *HttpClientDoerMock {
-	return &HttpClientDoerMock{
-		responseErrByMethodByUrl: make(map[string]map[string]*MockHttpResponseErr),
-		requestBodyByMethodByUrl: make(map[string]map[string][][]byte),
-	}
-}
-
-func (m *HttpClientDoerMock) setReqResponse(
-	req *http.Request,
-	response *http.Response,
-	err error,
-) {
-	method, url := HTTP_SEND_TEST_HTTP_CLIENT_MOCK_ANY, HTTP_SEND_TEST_HTTP_CLIENT_MOCK_ANY
-	if req != nil {
-		method, url = req.Method, req.URL.String()
-	}
-	response_by_url := m.responseErrByMethodByUrl[method]
-	if response_by_url == nil {
-		response_by_url = make(map[string]*MockHttpResponseErr)
-		m.responseErrByMethodByUrl[method] = response_by_url
-	}
-	response_by_url[url] = &MockHttpResponseErr{
-		response,
-		err,
-	}
-	if m.requestBodyByMethodByUrl[method] == nil {
-		m.requestBodyByMethodByUrl[method] = make(map[string][][]byte)
-	}
-}
-
-func (m *HttpClientDoerMock) setGetResponse(
-	url string,
-	response *http.Response,
-	err error,
-) {
-	method := http.MethodGet
-	response_by_url := m.responseErrByMethodByUrl[method]
-	if response_by_url == nil {
-		response_by_url = make(map[string]*MockHttpResponseErr)
-		m.responseErrByMethodByUrl[method] = response_by_url
-	}
-	response_by_url[url] = &MockHttpResponseErr{
-		response,
-		err,
-	}
-	if m.requestBodyByMethodByUrl[method] == nil {
-		m.requestBodyByMethodByUrl[method] = make(map[string][][]byte)
-	}
-}
-
-func (m *HttpClientDoerMock) setPutResponse(
-	url string,
-	response *http.Response,
-	err error,
-) {
-	method := http.MethodPut
-	response_by_url := m.responseErrByMethodByUrl[method]
-	if response_by_url == nil {
-		response_by_url = make(map[string]*MockHttpResponseErr)
-		m.responseErrByMethodByUrl[method] = response_by_url
-	}
-	response_by_url[url] = &MockHttpResponseErr{
-		response,
-		err,
-	}
-	if m.requestBodyByMethodByUrl[method] == nil {
-		m.requestBodyByMethodByUrl[method] = make(map[string][][]byte)
-	}
-}
-
-func (m *HttpClientDoerMock) getResponseErr(req *http.Request) *MockHttpResponseErr {
-	// Try: (method, url), (ANY, url), (method, ANY), (ANY, ANY):
-	for _, url := range []string{req.URL.String(), HTTP_SEND_TEST_HTTP_CLIENT_MOCK_ANY} {
-		for _, method := range []string{req.Method, HTTP_SEND_TEST_HTTP_CLIENT_MOCK_ANY} {
-			response_by_url := m.responseErrByMethodByUrl[method]
-			if response_by_url == nil {
-				continue
-			}
-			responseErr := response_by_url[url]
-			if responseErr != nil {
-				return responseErr
-			}
-		}
-	}
-	return &MockHttpResponseErr{
-		&http.Response{StatusCode: http.StatusNotFound},
-		nil,
-	}
-}
-
-func (m *HttpClientDoerMock) Do(req *http.Request) (*http.Response, error) {
-	responseErr := m.getResponseErr(req)
-	response, err := responseErr.response, responseErr.err
-	if response != nil {
-		if response.Status == "" {
-			response.Status = fmt.Sprintf("%d %s", response.StatusCode, http.StatusText(response.StatusCode))
-		}
-		if response.ProtoMajor == 0 {
-			response.ProtoMajor = 1
-		}
-		if response.Proto == "" {
-			response.Proto = fmt.Sprintf("HTTP%d/%d", response.ProtoMajor, response.ProtoMinor)
-		}
-		if response.StatusCode == http.StatusOK && err == nil && req.Body != nil {
-			body, err := io.ReadAll(req.Body)
-			if err != nil {
-				return nil, err
-			}
-			m.requestBodyByMethodByUrl[req.Method][req.URL.String()] = append(
-				m.requestBodyByMethodByUrl[req.Method][req.URL.String()],
-				body,
-			)
-		}
-	}
-	return response, err
-}
-
-type MockableTimers struct {
-	timers map[string]*testutils.MockTimer
-}
-
-func NewMockableTimers() *MockableTimers {
-	return &MockableTimers{make(map[string]*testutils.MockTimer)}
-}
-
-func (mts *MockableTimers) NewMockTimer(d time.Duration, id string) MockableTimer {
-	mockTimer := testutils.NewMockTimer()
-	mts.timers[id] = mockTimer
-	return MockableTimer(mockTimer)
-}
-
 func prepareHttpSenderPoolForTest(
 	urlSpecList string,
 	// The list on indexes in urlSpecList that should be started as healthy. If
@@ -178,7 +37,7 @@ func prepareHttpSenderPoolForTest(
 	startHealthyIndexList []int,
 ) (
 	pool *HttpSenderPool,
-	mockableTimers *MockableTimers,
+	mockableTimers *testutils.MockTimerPool,
 	err error,
 ) {
 	defer func() {
@@ -201,28 +60,11 @@ func prepareHttpSenderPoolForTest(
 		healthUrls = append(healthUrls, importHealthUrlPair.healthUrl)
 	}
 
-	healthyIndexSet := make(map[int]bool)
-	unhealthyIndexSet := make(map[int]bool)
-	if len(startHealthyIndexList) == 1 && startHealthyIndexList[0] == -1 {
-		for i := 0; i < len(importHealthUrlPairs); i++ {
-			healthyIndexSet[i] = true
-		}
-	} else {
-		for _, i := range startHealthyIndexList {
-			healthyIndexSet[i] = true
-		}
-		for i := 0; i < len(importHealthUrlPairs); i++ {
-			if !healthyIndexSet[i] {
-				unhealthyIndexSet[i] = true
-			}
-		}
-	}
-
 	// Prepare config w/ mocks for timers and HTTP client:
 	config := BuildHttpSendConfigFromArgs()
 	config.urlSpecList = urlSpecList
-	config.httpClient = NewHttpClientDoerMock()
-	mockableTimers = NewMockableTimers()
+	config.httpClient = testutils.NewHttpClientDoerMock()
+	mockableTimers = testutils.NewMockTimePool()
 	config.newTimerFn = mockableTimers.NewMockTimer
 	pool, err = NewHttpSenderPool(config)
 	if err != nil {
@@ -231,13 +73,26 @@ func prepareHttpSenderPoolForTest(
 
 	// Prepare HTTP client mocks for the import URLs that should check healthy
 	// from the start:
-	httpClientDoerMock := pool.httpClient.(*HttpClientDoerMock)
-	for i, _ := range healthyIndexSet {
-		httpClientDoerMock.setGetResponse(
-			healthUrls[i],
-			&http.Response{StatusCode: http.StatusOK},
-			nil,
-		)
+	expectedImportUrlSet := make(map[string]bool)
+	httpClientDoerMock := pool.httpClient.(*testutils.HttpClientDoerMock)
+	if len(startHealthyIndexList) == 1 && startHealthyIndexList[0] == -1 {
+		for i := 0; i < len(importHealthUrlPairs); i++ {
+			expectedImportUrlSet[importUrls[i]] = true
+			httpClientDoerMock.SetGetResponse(
+				healthUrls[i],
+				&http.Response{StatusCode: http.StatusOK},
+				nil,
+			)
+		}
+	} else {
+		for _, i := range startHealthyIndexList {
+			expectedImportUrlSet[importUrls[i]] = true
+			httpClientDoerMock.SetGetResponse(
+				healthUrls[i],
+				&http.Response{StatusCode: http.StatusOK},
+				nil,
+			)
+		}
 	}
 
 	err = pool.Start()
@@ -245,41 +100,27 @@ func prepareHttpSenderPoolForTest(
 		return
 	}
 
-	// Wait until:
-	//  - all expected healthy import URLs appear in the healthy list
-	//  - all pending health check import URLs have timers registered
-	allRegistered := false
-	for pollN := 0; !allRegistered && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
+	// Wait until all expected healthy import URLs appear in the healthy list:
+	for pollN := 0; len(expectedImportUrlSet) > 0 && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
 		if pollN > 0 {
 			time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
 		}
-
-		allRegistered = true
-
-		foundHealthyImportUrls := make(map[string]bool)
 		for _, ep := range pool.GetHealthyEndpoints() {
-			foundHealthyImportUrls[ep.importUrl] = true
-		}
-		for i, _ := range healthyIndexSet {
-			if !foundHealthyImportUrls[importUrls[i]] {
-				allRegistered = false
-				break
-			}
-		}
-		if !allRegistered {
-			continue
-		}
-
-		for i, _ := range unhealthyIndexSet {
-			_, ok := mockableTimers.timers[importUrls[i]]
-			if !ok {
-				allRegistered = false
-				break
-			}
+			delete(expectedImportUrlSet, ep.importUrl)
 		}
 	}
-	if !allRegistered {
-		err = fmt.Errorf("Not all health checkers started after %s", HTTP_SEND_TEST_MAX_WAIT)
+	if len(expectedImportUrlSet) > 0 {
+		expectedHealthyUrlList := make([]string, len(expectedImportUrlSet))
+		i := 0
+		for importUrl, _ := range expectedImportUrlSet {
+			expectedHealthyUrlList[i] = importUrl
+			i++
+		}
+		err = fmt.Errorf(
+			"the following importUrl are not healthy after %s: %v",
+			HTTP_SEND_TEST_MAX_WAIT,
+			expectedHealthyUrlList,
+		)
 	}
 
 	return
@@ -372,27 +213,28 @@ func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHea
 		t.Fatal(err)
 	}
 
-	httpClientDoerMock := pool.httpClient.(*HttpClientDoerMock)
+	httpClientDoerMock := pool.httpClient.(*testutils.HttpClientDoerMock)
 
 	// Each health checker is stopped in next check timer. Trigger them one by
 	// one and expect the relevant import URL to be marked healthy:
 	unhealthyEndpoints := pool.GetUnhealthyEndpoints()
 
 	for _, ep := range unhealthyEndpoints {
+		t.Logf("Waiting for %s...", ep.importUrl)
 		importUrl, healthUrl := ep.importUrl, ep.healthUrl
-		httpClientDoerMock.setGetResponse(
+		httpClientDoerMock.SetGetResponse(
 			healthUrl,
 			&http.Response{StatusCode: http.StatusOK},
 			nil,
 		)
-		mockableTimers.timers[importUrl].Fire()
+		mockableTimers.Fire(importUrl, HTTP_SEND_TEST_MAX_WAIT)
 
 		found := false
 		for pollN := 0; !found && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
 			if pollN > 0 {
 				time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
 			}
-			for _, ep := range pool.GetUnhealthyEndpoints() {
+			for _, ep := range pool.GetHealthyEndpoints() {
 				if ep.importUrl == importUrl {
 					found = true
 					break
@@ -458,22 +300,22 @@ func testHttpSendOK(
 		return
 	}
 
-	httpClientDoerMock := pool.httpClient.(*HttpClientDoerMock)
+	httpClientDoerMock := pool.httpClient.(*testutils.HttpClientDoerMock)
 	for i, ep := range healthyEndpoints {
 		if doFailover && i < len(healthyEndpoints)-1 {
 			// Alternate the failure HTTP != OK v. error:
 			if i&1 == 0 {
 				response := &http.Response{StatusCode: http.StatusGone}
-				httpClientDoerMock.setGetResponse(ep.healthUrl, response, nil)
-				httpClientDoerMock.setPutResponse(ep.importUrl, response, nil)
+				httpClientDoerMock.SetGetResponse(ep.healthUrl, response, nil)
+				httpClientDoerMock.SetPutResponse(ep.importUrl, response, nil)
 			} else {
-				httpClientDoerMock.setGetResponse(ep.healthUrl, nil, fmt.Errorf("%s: dial error", ep.healthUrl))
-				httpClientDoerMock.setPutResponse(ep.importUrl, nil, fmt.Errorf("%s: dial error", ep.importUrl))
+				httpClientDoerMock.SetGetResponse(ep.healthUrl, nil, fmt.Errorf("%s: dial error", ep.healthUrl))
+				httpClientDoerMock.SetPutResponse(ep.importUrl, nil, fmt.Errorf("%s: dial error", ep.importUrl))
 			}
 		} else {
 			response := &http.Response{StatusCode: http.StatusOK}
-			httpClientDoerMock.setGetResponse(ep.healthUrl, response, nil)
-			httpClientDoerMock.setPutResponse(ep.importUrl, response, nil)
+			httpClientDoerMock.SetGetResponse(ep.healthUrl, response, nil)
+			httpClientDoerMock.SetPutResponse(ep.importUrl, response, nil)
 		}
 	}
 
@@ -491,7 +333,7 @@ func testHttpSendOK(
 		}
 	}
 
-	requestBodyMap := httpClientDoerMock.requestBodyByMethodByUrl[http.MethodPut]
+	requestBodyMap := httpClientDoerMock.RequestBodyByMethodByUrl[http.MethodPut]
 	if requestBodyMap == nil {
 		t.Fatalf("No requests were made")
 	}
@@ -538,6 +380,118 @@ func TestHttpSendOK(t *testing.T) {
 					},
 				)
 			}
+		}
+	}
+}
+
+func testHttpSendNoImportUrl(
+	t *testing.T,
+	urlSpecList string,
+	recoveryExpected bool,
+) {
+	pool, mockableTimers, err := prepareHttpSenderPoolForTest(
+		urlSpecList, nil,
+	)
+
+	defer func() {
+		if pool != nil {
+			pool.Stop()
+		}
+	}()
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	buf := &bytes.Buffer{}
+	buf.WriteString("Test no import list")
+	bufId := fmt.Sprintf("Send(buf=%p)", buf)
+	go func() {
+		failedAttempts := pool.getImportUrlMaxAttempts
+		if recoveryExpected {
+			failedAttempts /= 2
+		}
+		for i := 0; i < failedAttempts; i++ {
+			err := mockableTimers.Fire(bufId, HTTP_SEND_TEST_MAX_WAIT)
+			if err != nil {
+				t.Log(err)
+				return
+			}
+		}
+		if recoveryExpected {
+			for _, ep := range pool.importUrlMap {
+				importUrl, healthUrl := ep.importUrl, ep.healthUrl
+				httpClientDoerMock := pool.httpClient.(*testutils.HttpClientDoerMock)
+				response := &http.Response{StatusCode: http.StatusOK}
+				httpClientDoerMock.SetGetResponse(healthUrl, response, nil)
+				httpClientDoerMock.SetPutResponse(importUrl, response, nil)
+				err := mockableTimers.Fire(importUrl, HTTP_SEND_TEST_MAX_WAIT)
+				if err != nil {
+					t.Log(err)
+					return
+				}
+				found := false
+				for pollN := 0; !found && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
+					if pollN > 0 {
+						time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
+					}
+					for _, ep := range pool.GetHealthyEndpoints() {
+						if ep.importUrl == importUrl {
+							found = true
+							break
+						}
+					}
+				}
+				if !found {
+					t.Logf("%s not found healthy after %s", importUrl, HTTP_SEND_TEST_MAX_WAIT)
+					return
+				}
+				err = mockableTimers.Fire(bufId, HTTP_SEND_TEST_MAX_WAIT)
+				if err != nil {
+					t.Log(err)
+					return
+				}
+				break
+			}
+		}
+	}()
+	// Invoke send w/ a deadline:
+	sendRet := make(chan error, 1)
+	ctx, ctxCancelFn := context.WithTimeout(context.Background(), HTTP_SEND_TEST_MAX_WAIT)
+	go func() {
+		err := pool.Send(buf, nil, "")
+		if err != nil {
+			t.Log(err)
+		}
+		sendRet <- err
+	}()
+	select {
+	case <-ctx.Done():
+		t.Fatalf("Send timeout, it didn't complete after %s", HTTP_SEND_TEST_MAX_WAIT)
+	case err = <-sendRet:
+	}
+	ctxCancelFn()
+	if recoveryExpected {
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err == nil {
+			t.Fatal("Unexpected Send success when no import URLs were available")
+		}
+	}
+
+}
+
+func TestHttpSendNoImportUrl(t *testing.T) {
+	for _, urlSpecList := range TestHttpSendUrlSpecList {
+		for _, recoveryExpected := range []bool{false, true} {
+			t.Run(
+				fmt.Sprintf("urlSpecList=%s,recoveryExpected=%v", urlSpecList, recoveryExpected),
+				func(t *testing.T) {
+					testHttpSendNoImportUrl(t, urlSpecList, recoveryExpected)
+				},
+			)
 		}
 	}
 }
