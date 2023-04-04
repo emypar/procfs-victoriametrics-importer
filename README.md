@@ -17,7 +17,7 @@ A Golang channel storing the units of work, written by the **Scheduler** and rea
 
 ### MetricsGenFn and metricsGenCtx
 
-**MetricsGenFn** are functions capable of parsing [/proc](https://man7.org/linux/man-pages/man5/proc.5.html) information into [Prometheus exposition text format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md#text-based-format). The functions operate in the context of **metricsGenCtx**, which a container of configuration, state and stats. Each metrics generator function has its specific context (not to be confused with the Golang Standard Library
+**MetricsGenFn** are functions capable of parsing [/proc](https://man7.org/linux/man-pages/man5/proc.5.html) information into [Prometheus exposition text format](https://github.com/prometheus/docs/blob/main/content/docs/instrumenting/exposition_formats.md#text-based-format). The functions operate in the context of **metricsGenCtx**, which a container for configuration, state and stats. Each metrics generator function has its specific context (not to be confused with the Golang Standard Library
  one).
 
 The generated metrics are packed into buffers, until the latter reach ~ 64k in size (the last buffer of the scan may be shorter, of course). The buffers are written into the **Compressor Queue**
