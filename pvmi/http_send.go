@@ -78,33 +78,33 @@ type HttpSendConfig struct {
 }
 
 func BuildHttpSendConfigFromArgs() *HttpSendConfig {
-	maxConnsPerHost := *HttpSendArgMaxConnsPerHost
+	maxConnsPerHost := *HttpSendMaxConnsPerHostArg
 	if maxConnsPerHost <= 0 {
 		maxConnsPerHost = GetNCompressorsFromArgs()
 	}
 	httpSendConfig := &HttpSendConfig{
-		urlSpecList: *HttpSendArgImportHttpEndpoints,
+		urlSpecList: *HttpSendImportHttpEndpointsArg,
 		tcpConnectionTimeout: time.Duration(
-			*HttpSendArgTcpConnectionTimeout * float64(time.Second),
+			*HttpSendTcpConnectionTimeoutArg * float64(time.Second),
 		),
 		tcpKeepAlive: time.Duration(
-			*HttpSendArgTcpKeepAlive * float64(time.Second),
+			*HttpSendTcpKeepAliveArg * float64(time.Second),
 		),
-		httpDisableKeepAlives: *HttpSendArgDisableHttpKeepAlive,
+		httpDisableKeepAlives: *HttpSendDisableHttpKeepAliveArg,
 		maxConnsPerHost:       maxConnsPerHost,
 		idleConnTimeout: time.Duration(
-			*HttpSendArgIdleConnectionTimeout * float64(time.Second),
+			*HttpSendIdleConnectionTimeoutArg * float64(time.Second),
 		),
 		responseHeaderTimeout: time.Duration(
-			*HttpSendArgResponseHeaderTimeout * float64(time.Second),
+			*HttpSendResponseHeaderTimeoutArg * float64(time.Second),
 		),
 		healthCheckPause: time.Duration(
-			*HttpSendArgHealthCheckPause * float64(time.Second),
+			*HttpSendHealthCheckPauseArg * float64(time.Second),
 		),
 		getImportUrlMaxAttempts: int(
-			*HttpSendArgHealthyImportMaxWait / *HttpSendArgHealthCheckPause + 0.9,
+			*HttpSendHealthyImportMaxWaitArg / *HttpSendHealthCheckPauseArg + 0.9,
 		),
-		logNthCheckFailure: *HttpSendArgLogNthCheckFailure,
+		logNthCheckFailure: *HttpSendLogNthCheckFailureArg,
 	}
 	return httpSendConfig
 }

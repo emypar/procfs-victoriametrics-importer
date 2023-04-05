@@ -141,7 +141,7 @@ func AdjustNCompressors(nCompressors int) int {
 }
 
 func GetNCompressorsFromArgs() int {
-	return AdjustNCompressors(*CompressorArgNumCompressors)
+	return AdjustNCompressors(*CompressorNumCompressorsArg)
 }
 
 func NewCompressorPoolContext(
@@ -202,14 +202,14 @@ func (poolCtx *CompressorPoolContext) SetSenderFn(senderFn CompressorSenderFunct
 
 func NewCompressorPoolContextFromArgs() (*CompressorPoolContext, error) {
 	return NewCompressorPoolContext(
-		*CompressorArgCompressionLevel,
-		*CompressorArgBatchTargetSize,
+		*CompressorCompressionLevelArg,
+		*CompressorBatchTargetSizeArg,
 		time.Duration(*CompressorArgBatchFlushInterval*float64(time.Second)),
-		*CompressorArgExponentialDecayAlpha,
+		*CompressorExponentialDecayAlphaArg,
 		nil,
 		nil,
 		nil,
-		*CompressorArgNumCompressors,
+		*CompressorNumCompressorsArg,
 	)
 }
 

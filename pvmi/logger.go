@@ -118,12 +118,12 @@ func GetLogLevelNames() []string {
 }
 
 func SetLoggerFromArgs() error {
-	level, err := logrus.ParseLevel(*LoggerArgsLevel)
+	level, err := logrus.ParseLevel(*LoggerLevelArg)
 	if err != nil {
 		return err
 	}
 	Log.SetLevel(level)
-	if *LoggerArgsUseJson {
+	if *LoggerUseJsonArg {
 		Log.SetFormatter(LogJsonFormatter)
 	}
 	return nil

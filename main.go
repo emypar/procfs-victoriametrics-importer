@@ -10,6 +10,7 @@ import (
 
 func main() {
 	flag.Parse()
+
 	err := pvmi.SetLoggerFromArgs()
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -20,7 +21,7 @@ func main() {
 
 	pvmi.SetGlobalBufferPoolFromArgs()
 
-	if *pvmi.HttpSendArgImportHttpEndpoints != "" {
+	if *pvmi.HttpSendImportHttpEndpointsArg != "" {
 		_, err = pvmi.StartNewHttpSenderPoolFromArgs()
 		if err != nil {
 			pvmi.Log.Fatal(err)

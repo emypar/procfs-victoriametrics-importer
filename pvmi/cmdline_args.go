@@ -15,8 +15,8 @@ const (
 )
 
 // http_send.go:
-var HttpSendArgImportHttpEndpoints = flag.String(
-	"import-http-endpoints",
+var HttpSendImportHttpEndpointsArg = flag.String(
+	"http-send-import-endpoints",
 	"",
 	FormatFlagUsage(fmt.Sprintf(`
 	Comma separated list of HTTP import endpoints. Each endpoint can be
@@ -28,20 +28,20 @@ var HttpSendArgImportHttpEndpoints = flag.String(
 	`, HTTP_ENDPOINT_IMPORT_URI, HTTP_ENDPOINT_HEALTH_URI)),
 )
 
-var HttpSendArgTcpConnectionTimeout = flag.Float64(
-	"tcp-connection-timeout",
+var HttpSendTcpConnectionTimeoutArg = flag.Float64(
+	"http-send-tcp-connection-timeout",
 	DEFAULT_HTTP_SEND_TCP_CONNECTION_TIMEOUT,
 	`TCP connection timeout, in seconds`,
 )
 
-var HttpSendArgTcpKeepAlive = flag.Float64(
-	"tcp-keep-alive",
+var HttpSendTcpKeepAliveArg = flag.Float64(
+	"http-send-tcp-keep-alive",
 	DEFAULT_HTTP_SEND_TCP_KEEP_ALIVE,
 	`TCP keep alive interval, in seconds; use -1 to disable`,
 )
 
-var HttpSendArgIdleConnectionTimeout = flag.Float64(
-	"http-idle-connection-timeout",
+var HttpSendIdleConnectionTimeoutArg = flag.Float64(
+	"http-send-idle-connection-timeout",
 	DEFAULT_HTTP_SEND_IDLE_CONNECTION_TIMEOUT,
 	FormatFlagUsage(`
 	The maximum amount of seconds an idle (keep-alive) connection will remain
@@ -49,14 +49,14 @@ var HttpSendArgIdleConnectionTimeout = flag.Float64(
 	`),
 )
 
-var HttpSendArgDisableHttpKeepAlive = flag.Bool(
-	"disable-http-keep-alive",
+var HttpSendDisableHttpKeepAliveArg = flag.Bool(
+	"http-send-disable-keep-alive",
 	false,
 	`Disable HTTP keep alive`,
 )
 
-var HttpSendArgMaxConnsPerHost = flag.Int(
-	"max-conns-per-host",
+var HttpSendMaxConnsPerHostArg = flag.Int(
+	"http-send-max-conns-per-host",
 	-1,
 	FormatFlagUsage(`
 	The number of connections per endpoint, generally this should be the same
@@ -65,8 +65,8 @@ var HttpSendArgMaxConnsPerHost = flag.Int(
 	`),
 )
 
-var HttpSendArgResponseHeaderTimeout = flag.Float64(
-	"http-response-header-timeout",
+var HttpSendResponseHeaderTimeoutArg = flag.Float64(
+	"http-send-response-header-timeout",
 	DEFAULT_HTTP_SEND_RESPONSE_HEADER_TIMEOUT,
 	FormatFlagUsage(`
 	Response header timeout, if non-zero, specifies the amount of seconds to
@@ -76,39 +76,39 @@ var HttpSendArgResponseHeaderTimeout = flag.Float64(
 	`),
 )
 
-var HttpSendArgHealthCheckPause = flag.Float64(
-	"http-health-check-pause",
+var HttpSendHealthCheckPauseArg = flag.Float64(
+	"http-send-health-check-pause",
 	DEFAULT_HTTP_SEND_HEALTH_CHECK_PAUSE,
 	`Pause between consecutive health checks, in seconds`,
 )
 
-var HttpSendArgHealthyImportMaxWait = flag.Float64(
-	"http-healthy-import-max-wait",
+var HttpSendHealthyImportMaxWaitArg = flag.Float64(
+	"http-send-healthy-import-max-wait",
 	DEFAULT_HTTP_SEND_HEALTHY_IMPORT_MAX_WAIT,
 	`How long to wait for a healthy import, in seconds`,
 )
 
-var HttpSendArgLogNthCheckFailure = flag.Int(
+var HttpSendLogNthCheckFailureArg = flag.Int(
 	"http-health-log-nth-check-failure",
 	DEFAULT_HTTP_SEND_LOG_NTH_CHECK_FAILURE,
 	FormatFlagUsage(`
 	How often to log the same health check error (i.e log only every Nth
-	consecutive occurrence)
+	consecutive occurrence).
 	`),
 )
 
 // compressor.go:
-var CompressorArgNumCompressors = flag.Int(
-	"num-compressor-workers",
+var CompressorNumCompressorsArg = flag.Int(
+	"compressor-num-workers",
 	DEFAULT_NUM_COMPRESSOR_WORKERS,
 	FormatFlagUsage(fmt.Sprintf(`
 	The number of compressor workers. If -1, then the number will be
-	calculated as min(available CPU#, %d)
+	calculated as min(available CPU#, %d).
 	`, MAX_NUM_COMPRESSOR_WORKERS)),
 )
 
-var CompressorArgCompressionLevel = flag.Int(
-	"compression-level",
+var CompressorCompressionLevelArg = flag.Int(
+	"compressor-compression-level",
 	DEFAULT_COMPRESSION_LEVEL,
 	FormatFlagUsage(fmt.Sprintf(`
 	Compression level. Use %d for default compression and %d for no
@@ -116,11 +116,11 @@ var CompressorArgCompressionLevel = flag.Int(
 	`, gzip.DefaultCompression, gzip.NoCompression)),
 )
 
-var CompressorArgBatchTargetSize = flag.Int(
+var CompressorBatchTargetSizeArg = flag.Int(
 	"compressor-batch-target-size",
 	DEFAULT_COMPRESSED_BATCH_TARGET_SIZE,
 	FormatFlagUsage(`
-	Compress until the current batch reaches this size
+	Compress until the current batch reaches this size.
 	`),
 )
 
@@ -133,7 +133,7 @@ var CompressorArgBatchFlushInterval = flag.Float64(
 	`),
 )
 
-var CompressorArgExponentialDecayAlpha = flag.Float64(
+var CompressorExponentialDecayAlphaArg = flag.Float64(
 	"compressor-exponential-decay-alpha",
 	DEFAULT_COMPRESSION_FACTOR_ALPHA,
 	FormatFlagUsage(`
@@ -143,8 +143,8 @@ var CompressorArgExponentialDecayAlpha = flag.Float64(
 	`),
 )
 
-// buffer_pool.go
-var BufPoolArgsMaxSize = flag.Int(
+// buffer_pool.go:
+var BufPoolMaxSizeArg = flag.Int(
 	"buffer-pool-max-size",
 	DEFAULT_BUF_POOL_MAX_SIZE,
 	FormatFlagUsage(fmt.Sprintf(`
@@ -156,19 +156,33 @@ var BufPoolArgsMaxSize = flag.Int(
 	`, BUF_POOL_MAX_SIZE_UNBOUND)),
 )
 
-// logger.go
-var LoggerArgsUseJson = flag.Bool(
+// logger.go:
+var LoggerUseJsonArg = flag.Bool(
 	"log-json-format",
 	false,
-	"Enable log in JSON format",
+	"Enable log in JSON format.",
 )
 
-var LoggerArgsLevel = flag.String(
+var LoggerLevelArg = flag.String(
 	"log-level",
 	DEFAULT_LOG_LEVEL.String(),
 	FormatFlagUsage(fmt.Sprintf(`
 	Set log level, it should be one of the %s values. 
 	`, GetLogLevelNames())),
+)
+
+// metrics_common.go:
+var MetricsWriteChanSizeArg = flag.Int(
+	"metrics-write-channel-size",
+	DEFAULT_METRICS_WRITE_CHANNEL_SIZE,
+	FormatFlagUsage(fmt.Sprintf(`
+	The size of the metrics write channel (AKA Compressor Queue). Use %d to
+	base it on buffer-pool-max-size arg, 90%% of that value. The value will
+	be adjusted to be at least %d.
+	`,
+		METRICS_WRITE_CHANNEL_BASED_ON_BUF_POOL_SIZE,
+		METRICS_WRITE_CHANNEL_MIN_SIZE,
+	)),
 )
 
 // Format command flag usage for help message.
