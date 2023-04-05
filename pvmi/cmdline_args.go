@@ -104,7 +104,7 @@ var CompressorArgNumCompressors = flag.Int(
 	FormatFlagUsage(fmt.Sprintf(`
 	The number of compressor workers. If -1, then the number will be
 	calculated as min(available CPU#, %d)
-	`, 4)),
+	`, MAX_NUM_COMPRESSOR_WORKERS)),
 )
 
 var CompressorArgCompressionLevel = flag.Int(
