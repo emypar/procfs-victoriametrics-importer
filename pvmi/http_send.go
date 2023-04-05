@@ -34,7 +34,7 @@ var HttpSendArgImportHttpEndpoints = flag.String(
 	"",
 	FormatFlagUsage(fmt.Sprintf(`
 	Comma separated list of HTTP import endpoints. Each endpoint can be
-	specified either as a  BASE_URL, in which case %s and %s are appended for
+	specified either as a  BASE_URL, in which case %#v and %#v are appended for
 	import and health check accordingly, or explicitly as a
 	(IMPORT_URL,HEALTH_CHECK_URL) pair. Mixing the 2 formats is supported,
 	e.g.:
