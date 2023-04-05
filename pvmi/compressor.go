@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"fmt"
 	"sync"
 	"time"
 )
@@ -34,6 +35,7 @@ const (
 	INITIAL_COMPRESSION_FACTOR              = 5.
 	DEFAULT_COMPRESSION_FACTOR_ALPHA        = 0.5
 	DEFAULT_NUM_COMPRESSOR_WORKERS          = -1
+	MAX_NUM_COMPRESSOR_WORKERS              = 4
 	// A compressed batch should have at least this size to be eligible for
 	// compression ratio evaluation:
 	COMPRESSED_BATCH_MIN_SIZE = 128
@@ -68,6 +70,8 @@ func (cs *CompressorStats) GetCompressorStats() *CompressorStats {
 }
 
 type CompressorPoolContext struct {
+	// Whether it was started or not:
+	started bool
 	// Compression level:
 	compressionLevel int
 	// Compressed batch target size; when the compressed data becomes ge than
@@ -106,10 +110,56 @@ func StartNewCompressorPool(
 	senderFn CompressorSenderFunction,
 	nCompressors int,
 ) (*CompressorPoolContext, error) {
-	Log.Infof(
-		"Start compressor pool with nCompressors=%d, compressionLevel=%d, batchTargetSize=%d, flushInterval=%s, alpha=%f",
-		nCompressors, compressionLevel, batchTargetSize, flushInterval, alpha,
+	poolCtx, err := NewCompressorPoolContext(
+		compressionLevel,
+		batchTargetSize,
+		flushInterval,
+		alpha,
+		metricsWriteChan,
+		bufPool,
+		senderFn,
+		nCompressors,
 	)
+	if err != nil {
+		return nil, err
+	}
+	err = poolCtx.Start()
+	if err != nil {
+		return nil, err
+	}
+	return poolCtx, nil
+}
+
+func AdjustNCompressors(nCompressors int) int {
+	if nCompressors < 1 {
+		nCompressors = CountAvailableCPUs()
+		if nCompressors > MAX_NUM_COMPRESSOR_WORKERS {
+			nCompressors = MAX_NUM_COMPRESSOR_WORKERS
+		}
+	}
+	return nCompressors
+}
+
+func GetNCompressorsFromArgs() int {
+	return AdjustNCompressors(*CompressorArgNumCompressors)
+}
+
+func NewCompressorPoolContext(
+	compressionLevel int,
+	batchTargetSize int,
+	flushInterval time.Duration,
+	alpha float64,
+	metricsWriteChan chan *bytes.Buffer,
+	bufPool *BufferPool,
+	senderFn CompressorSenderFunction,
+	nCompressors int,
+) (*CompressorPoolContext, error) {
+	// Verify compression level:
+	_, err := gzip.NewWriterLevel(gzip.NewWriter(nil), compressionLevel)
+	if err != nil {
+		return nil, err
+	}
+	nCompressors = AdjustNCompressors(nCompressors)
 	poolCtx := &CompressorPoolContext{
 		compressionLevel: compressionLevel,
 		batchTargetSize:  batchTargetSize,
@@ -123,18 +173,69 @@ func StartNewCompressorPool(
 		wg:               &sync.WaitGroup{},
 	}
 	poolCtx.cancelCtx, poolCtx.cancelFn = context.WithCancel(context.Background())
+	return poolCtx, nil
+}
 
-	for i := 0; i < nCompressors; i++ {
+func (poolCtx *CompressorPoolContext) SetMetricsWriteChan(metricsWriteChan chan *bytes.Buffer) error {
+	if poolCtx.started {
+		return fmt.Errorf("cannot set metricsWriteChan on running compressor pool")
+	}
+	poolCtx.metricsWriteChan = metricsWriteChan
+	return nil
+}
+
+func (poolCtx *CompressorPoolContext) SetBufPool(bufPool *BufferPool) error {
+	if poolCtx.started {
+		return fmt.Errorf("cannot set bufPool on running compressor pool")
+	}
+	poolCtx.bufPool = bufPool
+	return nil
+}
+
+func (poolCtx *CompressorPoolContext) SetSenderFn(senderFn CompressorSenderFunction) error {
+	if poolCtx.started {
+		return fmt.Errorf("cannot set senderFn on running compressor pool")
+	}
+	poolCtx.senderFn = senderFn
+	return nil
+}
+
+func NewCompressorPoolContextFromArgs() (*CompressorPoolContext, error) {
+	return NewCompressorPoolContext(
+		*CompressorArgCompressionLevel,
+		*CompressorArgBatchTargetSize,
+		time.Duration(*CompressorArgBatchFlushInterval*float64(time.Second)),
+		*CompressorArgExponentialDecayAlpha,
+		nil,
+		nil,
+		nil,
+		*CompressorArgNumCompressors,
+	)
+}
+
+func (poolCtx *CompressorPoolContext) Start() error {
+	if poolCtx.started {
+		return nil
+	}
+	Log.Infof(
+		"Start compressor pool with: compressionLevel=%d, batchTargetSize=%d, alpha=%f, nCompressors=%d",
+		poolCtx.compressionLevel,
+		poolCtx.batchTargetSize,
+		poolCtx.alpha,
+		poolCtx.nCompressors,
+	)
+	for i := 0; i < poolCtx.nCompressors; i++ {
 		poolCtx.statsList[i] = NewCompressorStats()
 		// Note: the only reason for failure would be an illegal compression
 		// level and this will be signaled by the 1st compressor. So in practice
 		// this either fails right away or it succeeds for all.
 		err := startCompressor(i, poolCtx)
 		if err != nil {
-			return nil, err
+			return err
 		}
 	}
-	return poolCtx, nil
+	poolCtx.started = true
+	return nil
 }
 
 func StartNewCompressorPoolFromArgs(
@@ -142,24 +243,30 @@ func StartNewCompressorPoolFromArgs(
 	bufPool *BufferPool,
 	senderFn CompressorSenderFunction,
 ) (*CompressorPoolContext, error) {
-	flushInterval := time.Duration(*CompressorArgBatchFlushInterval * float64(time.Second))
-	nCompressors := *CompressorArgNumCompressors
-	if nCompressors < 1 {
-		nCompressors = 1
+	poolCtx, err := NewCompressorPoolContextFromArgs()
+	if err != nil {
+		return nil, err
 	}
-	return StartNewCompressorPool(
-		*CompressorArgCompressionLevel,
-		*CompressorArgBatchTargetSize,
-		flushInterval,
-		*CompressorArgExponentialDecayAlpha,
-		metricsWriteChan,
-		bufPool,
-		senderFn,
-		nCompressors,
-	)
+	err = poolCtx.SetMetricsWriteChan(metricsWriteChan)
+	if err != nil {
+		return nil, err
+	}
+	err = poolCtx.SetBufPool(bufPool)
+	if err != nil {
+		return nil, err
+	}
+	err = poolCtx.SetSenderFn(senderFn)
+	if err != nil {
+		return nil, err
+	}
+	err = poolCtx.Start()
+	if err != nil {
+		return nil, err
+	}
+	return poolCtx, nil
 }
 
-func (poolCtx *CompressorPoolContext) StopCompressorPool() {
+func (poolCtx *CompressorPoolContext) Stop() {
 	poolCtx.cancelFn()
 	poolCtx.wg.Wait()
 	Log.Info("Compressor pool stopped")

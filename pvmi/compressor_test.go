@@ -75,7 +75,7 @@ func testCompressor(
 	}
 	defer func() {
 		t.Log("Stop compressor pool")
-		poolCtx.StopCompressorPool()
+		poolCtx.Stop()
 	}()
 
 	t.Log("Write metrics")

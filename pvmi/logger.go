@@ -33,11 +33,12 @@ func (c *LogFunctionFileCache) LogCallerPrettyfier(f *runtime.Frame) (function s
 	fnFile := c.fnFileCache[f.PC]
 	if fnFile == nil {
 		_, filename := path.Split(f.File)
-		function := f.Function
-		i := strings.LastIndex(function, "/")
-		if i >= 0 {
-			function = function[i+1:]
-		}
+		// function := f.Function
+		// i := strings.LastIndex(function, "/")
+		// if i >= 0 {
+		// 	function = function[i+1:]
+		// }
+		function := ""
 		fnFile = &LogFunctionFilePair{
 			function,
 			fmt.Sprintf("%s:%d", filename, f.Line),

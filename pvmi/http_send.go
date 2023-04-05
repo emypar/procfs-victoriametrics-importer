@@ -80,9 +80,9 @@ type HttpSendConfig struct {
 func BuildHttpSendConfigFromArgs() *HttpSendConfig {
 	maxConnsPerHost := *HttpSendArgMaxConnsPerHost
 	if maxConnsPerHost <= 0 {
-		maxConnsPerHost = 1 // TO BE REVISED LATER!
+		maxConnsPerHost = GetNCompressorsFromArgs()
 	}
-	return &HttpSendConfig{
+	httpSendConfig := &HttpSendConfig{
 		urlSpecList: *HttpSendArgImportHttpEndpoints,
 		tcpConnectionTimeout: time.Duration(
 			*HttpSendArgTcpConnectionTimeout * float64(time.Second),
@@ -106,6 +106,7 @@ func BuildHttpSendConfigFromArgs() *HttpSendConfig {
 		),
 		logNthCheckFailure: *HttpSendArgLogNthCheckFailure,
 	}
+	return httpSendConfig
 }
 
 // The sender will use (*http.Client).Do; for test purposes define a mockable
