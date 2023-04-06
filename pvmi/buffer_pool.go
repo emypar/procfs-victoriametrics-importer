@@ -104,5 +104,5 @@ var GlobalBufPool *BufferPool = NewBufferPool(DEFAULT_BUF_POOL_MAX_SIZE)
 
 func SetGlobalBufferPoolFromArgs() {
 	GlobalBufPool.SetMaxSize(*BufPoolMaxSizeArg)
-	Log.Infof("Global buffer pool max size: %d", GlobalBufPool.MaxSize())
+	Log.Infof("GlobalBufferPool: maxSize=%d", GlobalBufPool.maxSize)
 }

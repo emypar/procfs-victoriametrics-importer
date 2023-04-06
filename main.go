@@ -19,14 +19,30 @@ func main() {
 
 	pvmi.Log.Info("Start PVMI")
 
+	pvmi.SetGlobalMetricsWriteChannelFromArgs()
 	pvmi.SetGlobalBufferPoolFromArgs()
 
-	if *pvmi.HttpSendImportHttpEndpointsArg != "" {
-		_, err = pvmi.StartNewHttpSenderPoolFromArgs()
+	if *pvmi.DummySenderArg != "" {
+		pvmi.StartDummySenderFromArgs(
+			pvmi.GlobalMetricsWriteChannel,
+			pvmi.GlobalBufPool,
+		)
+	} else {
+		err = pvmi.StartGlobalHttpSenderPoolFromArgs()
+		if err != nil {
+			pvmi.Log.Fatal(err)
+			return
+		}
+		err = pvmi.StartGlobalCompressorPoolFromArgs(
+			pvmi.GlobalMetricsWriteChannel,
+			pvmi.GlobalBufPool,
+			pvmi.GlobalHttpSenderPool.Send,
+		)
 		if err != nil {
 			pvmi.Log.Fatal(err)
 			return
 		}
 	}
 
+	select {}
 }

@@ -100,6 +100,8 @@ type CompressorPoolContext struct {
 	wg *sync.WaitGroup
 }
 
+var GlobalCompressorPoolContext *CompressorPoolContext
+
 func StartNewCompressorPool(
 	compressionLevel int,
 	batchTargetSize int,
@@ -201,7 +203,7 @@ func (poolCtx *CompressorPoolContext) SetSenderFn(senderFn CompressorSenderFunct
 }
 
 func NewCompressorPoolContextFromArgs() (*CompressorPoolContext, error) {
-	return NewCompressorPoolContext(
+	poolCtx, err := NewCompressorPoolContext(
 		*CompressorCompressionLevelArg,
 		*CompressorBatchTargetSizeArg,
 		time.Duration(*CompressorArgBatchFlushInterval*float64(time.Second)),
@@ -211,19 +213,17 @@ func NewCompressorPoolContextFromArgs() (*CompressorPoolContext, error) {
 		nil,
 		*CompressorNumCompressorsArg,
 	)
+	if err != nil {
+		return nil, err
+	}
+	poolCtx.Log()
+	return poolCtx, nil
 }
 
 func (poolCtx *CompressorPoolContext) Start() error {
 	if poolCtx.started {
 		return nil
 	}
-	Log.Infof(
-		"Start compressor pool with: compressionLevel=%d, batchTargetSize=%d, alpha=%f, nCompressors=%d",
-		poolCtx.compressionLevel,
-		poolCtx.batchTargetSize,
-		poolCtx.alpha,
-		poolCtx.nCompressors,
-	)
 	for i := 0; i < poolCtx.nCompressors; i++ {
 		poolCtx.statsList[i] = NewCompressorStats()
 		// Note: the only reason for failure would be an illegal compression
@@ -236,6 +236,14 @@ func (poolCtx *CompressorPoolContext) Start() error {
 	}
 	poolCtx.started = true
 	return nil
+}
+
+func (poolCtx *CompressorPoolContext) Log() {
+	Log.Infof("Compressor: compressionLevel=%d", poolCtx.compressionLevel)
+	Log.Infof("Compressor: batchTargetSize=%d", poolCtx.batchTargetSize)
+	Log.Infof("Compressor: flushInterval=%s", poolCtx.flushInterval)
+	Log.Infof("Compressor: alpha=%f", poolCtx.alpha)
+	Log.Infof("Compressor: nCompressors=%d", poolCtx.nCompressors)
 }
 
 func StartNewCompressorPoolFromArgs(
@@ -264,6 +272,23 @@ func StartNewCompressorPoolFromArgs(
 		return nil, err
 	}
 	return poolCtx, nil
+}
+
+func StartGlobalCompressorPoolFromArgs(
+	metricsWriteChan chan *bytes.Buffer,
+	bufPool *BufferPool,
+	senderFn CompressorSenderFunction,
+) error {
+	poolCtx, err := StartNewCompressorPoolFromArgs(
+		metricsWriteChan,
+		bufPool,
+		senderFn,
+	)
+	if err != nil {
+		return err
+	}
+	GlobalCompressorPoolContext = poolCtx
+	return nil
 }
 
 func (poolCtx *CompressorPoolContext) Stop() {

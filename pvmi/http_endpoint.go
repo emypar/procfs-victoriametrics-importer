@@ -18,10 +18,9 @@
 package pvmi
 
 import (
+	"bytes"
 	"container/list"
 	"fmt"
-	"io"
-	"os"
 	"sync"
 )
 
@@ -173,23 +172,16 @@ func (eps *HttpEndpoints) GetHealthyEndpoints() []*HttpEndpoint {
 	return endpointList
 }
 
-func (eps *HttpEndpoints) PrintImportLists(w io.Writer) {
+func (eps *HttpEndpoints) String() string {
 	eps.m.Lock()
 	defer eps.m.Unlock()
 
-	if w == nil {
-		w = os.Stdout
+	buf := &bytes.Buffer{}
+	for _, ep := range eps.importUrlMap {
+		if buf.Len() > 0 {
+			buf.WriteString(", ")
+		}
+		fmt.Fprintf(buf, "(%s, %s)", ep.importUrl, ep.healthUrl)
 	}
-
-	fmt.Fprintln(w, "Healthy:")
-	for e := eps.healthy.Front(); e != nil; e = e.Next() {
-		fmt.Fprintln(w, " ", e.Value.(*HttpEndpoint).importUrl)
-	}
-	fmt.Fprintln(w)
-
-	fmt.Fprintln(w, "Unhealthy:")
-	for e := eps.unhealthy.Front(); e != nil; e = e.Next() {
-		fmt.Fprintln(w, " ", e.Value.(*HttpEndpoint).importUrl)
-	}
-	fmt.Fprintln(w)
+	return buf.String()
 }

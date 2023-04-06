@@ -28,6 +28,8 @@ const (
 	DEFAULT_HTTP_SEND_LOG_NTH_CHECK_FAILURE   = 15
 )
 
+var GlobalHttpSenderPool *HttpSenderPool
+
 type HttpSendConfig struct {
 	// The list of (IMPORT_URL,HEALTH_URL)|BASE_URL,...:
 	urlSpecList string
@@ -106,6 +108,7 @@ func BuildHttpSendConfigFromArgs() *HttpSendConfig {
 		),
 		logNthCheckFailure: *HttpSendLogNthCheckFailureArg,
 	}
+	httpSendConfig.Log()
 	return httpSendConfig
 }
 
@@ -216,6 +219,15 @@ func StartNewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 
 func StartNewHttpSenderPoolFromArgs() (*HttpSenderPool, error) {
 	return StartNewHttpSenderPool(nil)
+}
+
+func StartGlobalHttpSenderPoolFromArgs() error {
+	pool, err := StartNewHttpSenderPoolFromArgs()
+	if err != nil {
+		return err
+	}
+	GlobalHttpSenderPool = pool
+	return nil
 }
 
 func (pool *HttpSenderPool) Stop() {
@@ -405,4 +417,17 @@ func (pool *HttpSenderPool) Send(
 		}
 	}
 	return nil
+}
+
+func (config *HttpSendConfig) Log() {
+	Log.Infof("HttpSendConfig: urlSpecList=%s", config.urlSpecList)
+	Log.Infof("HttpSendConfig: tcpConnectionTimeout=%s", config.tcpConnectionTimeout)
+	Log.Infof("HttpSendConfig: tcpKeepAlive=%s", config.tcpKeepAlive)
+	Log.Infof("HttpSendConfig: httpDisableKeepAlives=%v", config.httpDisableKeepAlives)
+	Log.Infof("HttpSendConfig: maxConnsPerHost=%d", config.maxConnsPerHost)
+	Log.Infof("HttpSendConfig: idleConnTimeout=%s", config.idleConnTimeout)
+	Log.Infof("HttpSendConfig: responseHeaderTimeout=%s", config.responseHeaderTimeout)
+	Log.Infof("HttpSendConfig: healthCheckPause=%s", config.healthCheckPause)
+	Log.Infof("HttpSendConfig: getImportUrlMaxAttempts=%d", config.getImportUrlMaxAttempts)
+	Log.Infof("HttpSendConfig: logNthCheckFailure=%d", config.logNthCheckFailure)
 }

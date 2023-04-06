@@ -31,3 +31,9 @@ func NewMetricsWriteChannelFromArgs() chan *bytes.Buffer {
 	}
 	return make(chan *bytes.Buffer, metricsWriteChanSize)
 }
+
+var GlobalMetricsWriteChannel chan *bytes.Buffer
+
+func SetGlobalMetricsWriteChannelFromArgs() {
+	GlobalMetricsWriteChannel = NewMetricsWriteChannelFromArgs()
+}

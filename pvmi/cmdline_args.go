@@ -185,6 +185,18 @@ var MetricsWriteChanSizeArg = flag.Int(
 	)),
 )
 
+// dummy_wchan.go:
+var DummySenderArg = flag.String(
+	"dummy-sender",
+	"",
+	FormatFlagUsage(`
+	Test flag, set to discard or stdout in which case the metrics are either
+	ignored, useful to assess the resource utilization of the metrics
+	generators, or displayed to stdout, useful to see examples of actual
+	metrics without need of VictoriaMetrics infra.
+	`),
+)
+
 // Format command flag usage for help message.
 func FormatFlagUsageWidth(usage string, width int) string {
 	buf := &bytes.Buffer{}
