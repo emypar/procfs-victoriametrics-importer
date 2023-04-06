@@ -4,6 +4,9 @@ package pvmi
 
 import "time"
 
+// Mock time.Now():
+type TimeNowFn func() time.Time
+
 // A mockable timer provides an interface for testing, whereby the timer can be
 // triggered by invoking a method rather than by having to wait.
 type MockableTimer interface {
