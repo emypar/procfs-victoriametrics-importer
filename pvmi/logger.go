@@ -13,7 +13,8 @@ import (
 )
 
 const (
-	DEFAULT_LOG_LEVEL = logrus.InfoLevel
+	DEFAULT_LOG_LEVEL    = logrus.InfoLevel
+	COMPONENT_FIELD_NAME = "comp"
 )
 
 // Maintain a cache for caller PC -> (file:line#, function) to speed up the formatting:
@@ -57,8 +58,9 @@ var KeyIndexOrder = map[string]int{
 	// The desired order is time, level, file, func, other keys sorted
 	// alphabetically, msg. Use negative numbers to capitalize on the fact that
 	// other keys will return 0 at lookup.
-	logrus.FieldKeyTime:  -4,
-	logrus.FieldKeyLevel: -3,
+	logrus.FieldKeyTime:  -5,
+	logrus.FieldKeyLevel: -4,
+	COMPONENT_FIELD_NAME: -3,
 	logrus.FieldKeyFile:  -2,
 	logrus.FieldKeyFunc:  -1,
 	logrus.FieldKeyMsg:   1,

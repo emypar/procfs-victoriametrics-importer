@@ -27,6 +27,11 @@ import (
 	"time"
 )
 
+var SchedulerLog = Log.WithField(
+	COMPONENT_FIELD_NAME,
+	"Scheduler",
+)
+
 type TimeHeap []time.Time
 
 func (h TimeHeap) Len() int { return len(h) }
@@ -112,7 +117,7 @@ func (schedCtx *SchedulerContext) Start() error {
 		return fmt.Errorf("Empty schedule, cannot start")
 	}
 
-	Log.Info("Start Scheduler")
+	SchedulerLog.Info("Start Scheduler")
 	schedCtx.stopWg.Add(1)
 	go func() {
 		defer func() {
@@ -149,7 +154,7 @@ func (schedCtx *SchedulerContext) Start() error {
 func (schedCtx *SchedulerContext) Stop() {
 	schedCtx.stopCancelFn()
 	schedCtx.stopWg.Wait()
-	Log.Info("Scheduler stopped")
+	SchedulerLog.Info("Scheduler stopped")
 }
 
 func (schedCtx *SchedulerContext) Add(mGenFn MetricsGenFn, mGenCtx MetricsGenContext) {

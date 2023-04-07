@@ -43,6 +43,11 @@ const (
 	COMPRESSOR_ID_ALL = -1
 )
 
+var CompressorLog = Log.WithField(
+	COMPONENT_FIELD_NAME,
+	"Compressor",
+)
+
 type CompressorSenderFunction func(*bytes.Buffer, *BufferPool, string) error
 
 type CompressorStats struct {
@@ -239,11 +244,11 @@ func (poolCtx *CompressorPoolContext) Start() error {
 }
 
 func (poolCtx *CompressorPoolContext) Log() {
-	Log.Infof("Compressor: compressionLevel=%d", poolCtx.compressionLevel)
-	Log.Infof("Compressor: batchTargetSize=%d", poolCtx.batchTargetSize)
-	Log.Infof("Compressor: flushInterval=%s", poolCtx.flushInterval)
-	Log.Infof("Compressor: alpha=%f", poolCtx.alpha)
-	Log.Infof("Compressor: nCompressors=%d", poolCtx.nCompressors)
+	CompressorLog.Infof("Compressor: compressionLevel=%d", poolCtx.compressionLevel)
+	CompressorLog.Infof("Compressor: batchTargetSize=%d", poolCtx.batchTargetSize)
+	CompressorLog.Infof("Compressor: flushInterval=%s", poolCtx.flushInterval)
+	CompressorLog.Infof("Compressor: alpha=%f", poolCtx.alpha)
+	CompressorLog.Infof("Compressor: nCompressors=%d", poolCtx.nCompressors)
 }
 
 func StartNewCompressorPoolFromArgs(
@@ -294,7 +299,7 @@ func StartGlobalCompressorPoolFromArgs(
 func (poolCtx *CompressorPoolContext) Stop() {
 	poolCtx.cancelFn()
 	poolCtx.wg.Wait()
-	Log.Info("Compressor pool stopped")
+	CompressorLog.Info("Compressor pool stopped")
 }
 
 func (poolCtx *CompressorPoolContext) GetCompressorStats(id int) *CompressorStats {
@@ -372,7 +377,7 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 			select {
 			case buf, isOpen := <-metricsWriteChan:
 				if !isOpen {
-					Log.Infof("Compressor# %d: Metrics write channel closed", id)
+					CompressorLog.Infof("Compressor# %d: Metrics write channel closed", id)
 					doLoop = false
 					doSend = nBatchReads > 0
 					break
@@ -397,7 +402,7 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 					buf = nil // free its reference count
 				}
 				if err != nil {
-					Log.Errorf("Compressor# %d: %s", id, err)
+					CompressorLog.Errorf("Compressor# %d: %s", id, err)
 					// This should never happen, since the underlying writer is a
 					// buffer, it should not run into errors. If it does, discard
 					// the data thus far and reset the compressor.
@@ -422,7 +427,7 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 					doSend = true
 				}
 			case <-cancelCtx.Done():
-				Log.Infof("Compressor# %d: Pool shutting down", id)
+				CompressorLog.Infof("Compressor# %d: Pool shutting down", id)
 				doLoop = false
 				doSend = nBatchReads > 0
 			case <-flushTimer.C:
@@ -439,7 +444,7 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 				if senderFn != nil {
 					err := senderFn(gzBuf, bufPool, contentEncoding)
 					if err != nil {
-						Log.Warn(err)
+						CompressorLog.Warn(err)
 					}
 				} else if bufPool != nil {
 					bufPool.ReturnBuffer(gzBuf)
@@ -468,12 +473,12 @@ func startCompressor(id int, poolCtx *CompressorPoolContext) error {
 				nBatchReads, nBatchBytesRead, doSend, timeoutFlush = 0, 0, false, false
 			}
 		}
-		Log.Infof("Compressor# %d: Stopped", id)
+		CompressorLog.Infof("Compressor# %d: Stopped", id)
 		if wg != nil {
 			wg.Done()
 		}
 	}()
 
-	Log.Infof("Compressor# %d: Started", id)
+	CompressorLog.Infof("Compressor# %d: Started", id)
 	return nil
 }

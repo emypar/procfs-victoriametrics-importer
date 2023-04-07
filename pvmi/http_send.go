@@ -28,6 +28,11 @@ const (
 	DEFAULT_HTTP_SEND_LOG_NTH_CHECK_FAILURE   = 15
 )
 
+var HttpSendLog = Log.WithField(
+	COMPONENT_FIELD_NAME,
+	"HttpSend",
+)
+
 var GlobalHttpSenderPool *HttpSenderPool
 
 type HttpSendConfig struct {
@@ -233,7 +238,7 @@ func StartGlobalHttpSenderPoolFromArgs() error {
 func (pool *HttpSenderPool) Stop() {
 	pool.poolCancelFn()
 	pool.healthCheckWg.Wait()
-	Log.Info("Sender pool stopped")
+	HttpSendLog.Info("Sender pool stopped")
 }
 
 func (pool *HttpSenderPool) DeclareImportUrlUnhealthy(importUrl string) error {
@@ -260,14 +265,14 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 		return err
 	}
 
-	Log.Infof("%s: Start health check using: %s", importUrl, healthUrl)
+	HttpSendLog.Infof("%s: Start health check using: %s", importUrl, healthUrl)
 	checkFailureN, logCheckFailure := 0, false
 	response, err := httpClient.Do(request)
 	if response != nil && response.Body != nil {
 		io.ReadAll(response.Body)
 	}
 	if err == nil && response.StatusCode == http.StatusOK {
-		Log.Infof("%s: Healthy", importUrl)
+		HttpSendLog.Infof("%s: Healthy", importUrl)
 		pool.MarkHttpEndpointHealthy(ep)
 		return nil
 	}
@@ -277,16 +282,16 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 	healthCheckWg.Add(1)
 	go func() {
 		defer func() {
-			Log.Infof("%s: Stop health check", importUrl)
+			HttpSendLog.Infof("%s: Stop health check", importUrl)
 			healthCheckWg.Done()
 		}()
 		for {
 
 			if logCheckFailure {
 				if err != nil {
-					Log.Warnf("%s unhealthy: %s", importUrl, err)
+					HttpSendLog.Warnf("%s unhealthy: %s", importUrl, err)
 				} else {
-					Log.Warnf("%s unhealthy: %s %s: %s", importUrl, method, healthUrl, response.Status)
+					HttpSendLog.Warnf("%s unhealthy: %s %s: %s", importUrl, method, healthUrl, response.Status)
 				}
 				checkFailureN = 1
 			}
@@ -308,7 +313,7 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 				io.ReadAll(response.Body)
 			}
 			if err == nil && response.StatusCode == http.StatusOK {
-				Log.Infof("%s: Healthy", importUrl)
+				HttpSendLog.Infof("%s: Healthy", importUrl)
 				pool.MarkHttpEndpointHealthy(ep)
 				return
 			}
@@ -358,7 +363,7 @@ func (pool *HttpSenderPool) Send(
 		importUrl := pool.GetImportUrl(false)
 		for n := 0; importUrl == "" && n < getImportUrlMaxAttempts; n++ {
 			if bufId == "" {
-				Log.Warnf("Waiting for a healthy import URL")
+				HttpSendLog.Warnf("Waiting for a healthy import URL")
 				bufId = fmt.Sprintf("Send(buf=%p)", buf)
 				timer = pool.newTimerFn(waitHealthyPause, bufId)
 			} else {
@@ -407,9 +412,9 @@ func (pool *HttpSenderPool) Send(
 
 		// Send failed, report the error and declare the endpoint as unhealthy:
 		if err != nil {
-			Log.Warnf("%s %s: %s", method, importUrl, err)
+			HttpSendLog.Warnf("%s %s: %s", method, importUrl, err)
 		} else {
-			Log.Warnf("%s %s: %s", method, importUrl, response.Status)
+			HttpSendLog.Warnf("%s %s: %s", method, importUrl, response.Status)
 		}
 		err = pool.DeclareImportUrlUnhealthy(importUrl)
 		if err != nil {
@@ -420,14 +425,14 @@ func (pool *HttpSenderPool) Send(
 }
 
 func (config *HttpSendConfig) Log() {
-	Log.Infof("HttpSendConfig: urlSpecList=%s", config.urlSpecList)
-	Log.Infof("HttpSendConfig: tcpConnectionTimeout=%s", config.tcpConnectionTimeout)
-	Log.Infof("HttpSendConfig: tcpKeepAlive=%s", config.tcpKeepAlive)
-	Log.Infof("HttpSendConfig: httpDisableKeepAlives=%v", config.httpDisableKeepAlives)
-	Log.Infof("HttpSendConfig: maxConnsPerHost=%d", config.maxConnsPerHost)
-	Log.Infof("HttpSendConfig: idleConnTimeout=%s", config.idleConnTimeout)
-	Log.Infof("HttpSendConfig: responseHeaderTimeout=%s", config.responseHeaderTimeout)
-	Log.Infof("HttpSendConfig: healthCheckPause=%s", config.healthCheckPause)
-	Log.Infof("HttpSendConfig: getImportUrlMaxAttempts=%d", config.getImportUrlMaxAttempts)
-	Log.Infof("HttpSendConfig: logNthCheckFailure=%d", config.logNthCheckFailure)
+	HttpSendLog.Infof("HttpSendConfig: urlSpecList=%s", config.urlSpecList)
+	HttpSendLog.Infof("HttpSendConfig: tcpConnectionTimeout=%s", config.tcpConnectionTimeout)
+	HttpSendLog.Infof("HttpSendConfig: tcpKeepAlive=%s", config.tcpKeepAlive)
+	HttpSendLog.Infof("HttpSendConfig: httpDisableKeepAlives=%v", config.httpDisableKeepAlives)
+	HttpSendLog.Infof("HttpSendConfig: maxConnsPerHost=%d", config.maxConnsPerHost)
+	HttpSendLog.Infof("HttpSendConfig: idleConnTimeout=%s", config.idleConnTimeout)
+	HttpSendLog.Infof("HttpSendConfig: responseHeaderTimeout=%s", config.responseHeaderTimeout)
+	HttpSendLog.Infof("HttpSendConfig: healthCheckPause=%s", config.healthCheckPause)
+	HttpSendLog.Infof("HttpSendConfig: getImportUrlMaxAttempts=%d", config.getImportUrlMaxAttempts)
+	HttpSendLog.Infof("HttpSendConfig: logNthCheckFailure=%d", config.logNthCheckFailure)
 }
