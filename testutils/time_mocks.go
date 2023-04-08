@@ -10,7 +10,6 @@ import (
 const (
 	TIMER_MOCK_STATE_NOT_RUNNING = iota
 	TIMER_MOCK_STATE_RUNNING     = iota
-	TIMER_MOCK_STATE_CANCELLED   = iota
 )
 
 // A mockable timer provides an interface for testing, whereby the timer can be
@@ -50,12 +49,7 @@ func (m *MockTimer) Stop() bool {
 	m.cond.L.Lock()
 	defer m.cond.L.Unlock()
 	wasRunning := m.state == TIMER_MOCK_STATE_RUNNING
-	if wasRunning {
-		m.state = TIMER_MOCK_STATE_CANCELLED
-	} else {
-		m.state = TIMER_MOCK_STATE_NOT_RUNNING
-	}
-	m.cond.Broadcast()
+	m.state = TIMER_MOCK_STATE_NOT_RUNNING
 	return wasRunning
 }
 
@@ -65,9 +59,7 @@ func (m *MockTimer) Fire() {
 	for m.state == TIMER_MOCK_STATE_NOT_RUNNING {
 		m.cond.Wait()
 	}
-	if m.state == TIMER_MOCK_STATE_RUNNING {
-		m.C <- time.Time{}
-	}
+	m.C <- time.Time{}
 	m.state = TIMER_MOCK_STATE_NOT_RUNNING
 }
 
