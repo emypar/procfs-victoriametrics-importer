@@ -166,7 +166,7 @@ func runPidMetricsTestCase(
 	buf := &bytes.Buffer{}
 
 	// Generate new metrics:
-	ctx := &PidMetricsContext{
+	pidMetricsCtx := &PidMetricsContext{
 		fs:                fs,
 		procfsRoot:        pmtc.ProcfsRoot,
 		pmc:               pmc,
@@ -179,7 +179,7 @@ func runPidMetricsTestCase(
 		timeNow:           tm.timeNow,
 	}
 	pidTid := PidTidPair{pmtc.Pid, pmtc.Tid}
-	err = GeneratePidMetrics(pidTid, ctx, buf)
+	err = GeneratePidMetrics(pidTid, pidMetricsCtx, buf)
 	if err != nil {
 		t.Error(err)
 		return
@@ -309,7 +309,7 @@ func runAllPidMetricsTestCases(
 
 	bufPool := NewBufferPool(256)
 	mgf := func(wChan chan *bytes.Buffer) {
-		ctx := &PidMetricsContext{
+		mGenCtx := MetricsGenContext(&PidMetricsContext{
 			fs:                fs,
 			procfsRoot:        procfsRoot,
 			pmc:               pmc,
@@ -323,8 +323,8 @@ func runAllPidMetricsTestCases(
 			bufPool:           bufPool,
 			wChan:             wChan,
 			activeThreshold:   activeThreshold,
-		}
-		GenerateAllPidMetrics(ctx)
+		})
+		GenerateAllPidMetrics(mGenCtx)
 	}
 	gotMetrics := testutils.CollectMetrics(mgf, bufPool.ReturnBuffer)
 	// Check buffer pool:

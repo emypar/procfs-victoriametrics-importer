@@ -42,6 +42,11 @@ const (
 	PROC_PID_METRIC_T_STARTTIME_LABEL_NAME = "t_starttime"
 )
 
+var PidMetricsLog = Log.WithField(
+	COMPONENT_FIELD_NAME,
+	"PidMetrics",
+)
+
 var pidMetricCommonLabelsFmt = fmt.Sprintf(
 	`%s="%%s",%s="%%d",%s="%%d"`,
 	HOSTNAME_LABEL_NAME, PROC_PID_METRIC_PID_LABEL_NAME, PROC_PID_METRIC_STARTTIME_LABEL_NAME,
@@ -65,6 +70,8 @@ type PidMetricsStats struct {
 
 // The context for pid metrics generation:
 type PidMetricsContext struct {
+	// Interval, needed to qualify as a MetricsGenContext
+	interval time.Duration
 	// Procfs dir root, needed to read raw data:
 	procfsRoot string
 	// procfs filesystem for procfs parsers:
@@ -96,21 +103,55 @@ type PidMetricsContext struct {
 	// The following are useful for testing, in lieu of mocks:
 	hostname  string
 	clktckSec float64
-	timeNow   func() time.Time
+	timeNow   TimeNowFn
 	getPids   func(int) []PidTidPair
 	bufPool   *BufferPool
 }
 
+func (pidMetricsCtx *PidMetricsContext) GetInterval() time.Duration {
+	return pidMetricsCtx.interval
+}
+
 func NewPidMetricsContext(
+	interval time.Duration,
 	procfsRoot string,
-	pidListCache *PidListCache,
 	pidListPart int,
 	fullMetricsFactor int,
 	activeThreshold uint,
+	// needed for testing:
+	hostname string,
+	clktckSec float64,
+	timeNow TimeNowFn,
 	wChan chan *bytes.Buffer,
+	getPids GetPidsFn,
+	bufPool *BufferPool,
 ) (*PidMetricsContext, error) {
-	ctx := &PidMetricsContext{
+	if hostname == "" {
+		hostname = Hostname
+	}
+	if clktckSec <= 0 {
+		clktckSec = ClktckSec
+	}
+	if timeNow == nil {
+		timeNow = time.Now
+	}
+	if wChan == nil {
+		wChan = GlobalMetricsWriteChannel
+	}
+	if getPids == nil {
+		getPids = GlobalPidListCache.GetPids
+	}
+	if bufPool == nil {
+		bufPool = GlobalBufPool
+	}
+	fs, err := procfs.NewFS(procfsRoot)
+	if err != nil {
+		return nil, err
+	}
+	pidMetricsCtx := &PidMetricsContext{
+		interval:          interval,
 		procfsRoot:        procfsRoot,
+		fs:                fs,
 		pidListPart:       pidListPart,
 		pmc:               PidMetricsCache{},
 		psc:               PidStarttimeCache{},
@@ -118,42 +159,33 @@ func NewPidMetricsContext(
 		activeThreshold:   activeThreshold,
 		passNum:           0,
 		wChan:             wChan,
-		hostname:          Hostname,
-		clktckSec:         ClktckSec,
-		timeNow:           time.Now,
-		bufPool:           GlobalBufPool,
+		hostname:          hostname,
+		clktckSec:         clktckSec,
+		timeNow:           timeNow,
+		getPids:           getPids,
+		bufPool:           bufPool,
 	}
-	if procfsRoot != "" {
-		fs, err := procfs.NewFS(procfsRoot)
-		if err != nil {
-			return nil, err
-		}
-		ctx.fs = fs
-	}
-	if pidListCache != nil {
-		ctx.getPids = pidListCache.GetPids
-	}
-	return ctx, nil
+	return pidMetricsCtx, nil
 }
 
-func (ctx *PidMetricsContext) ClearPidStarttimeCache() {
-	ctx.psc = PidStarttimeCache{}
+func (pidMetricsCtx *PidMetricsContext) ClearPidStarttimeCache() {
+	pidMetricsCtx.psc = PidStarttimeCache{}
 }
 
-func (ctx *PidMetricsContext) ClearStats() {
-	ctx.pmStats = &PidMetricsStats{}
+func (pidMetricsCtx *PidMetricsContext) ClearStats() {
+	pidMetricsCtx.pmStats = &PidMetricsStats{}
 }
 
-func (ctx *PidMetricsContext) GetStats() *PidMetricsStats {
-	return ctx.pmStats
+func (pidMetricsCtx *PidMetricsContext) GetStats() *PidMetricsStats {
+	return pidMetricsCtx.pmStats
 }
 
-func (ctx *PidMetricsContext) GetFullMetricsCycleSeed() int {
-	ctx.fullMetricsCycleSeed += 1
-	if ctx.fullMetricsCycleSeed > ctx.fullMetricsFactor {
-		ctx.fullMetricsCycleSeed = 1
+func (pidMetricsCtx *PidMetricsContext) GetFullMetricsCycleSeed() int {
+	pidMetricsCtx.fullMetricsCycleSeed += 1
+	if pidMetricsCtx.fullMetricsCycleSeed > pidMetricsCtx.fullMetricsFactor {
+		pidMetricsCtx.fullMetricsCycleSeed = 1
 	}
-	return ctx.fullMetricsCycleSeed
+	return pidMetricsCtx.fullMetricsCycleSeed
 }
 
 // Previous pass cache, required for pseudo-categorical metrics and for %CPU.
@@ -235,7 +267,7 @@ func (psc PidStarttimeCache) resolvePidStarttime(
 // Args:
 //
 //	pidTid: (PID, TID) pair, TID == 0 for PID only
-//	ctx: PidMetricsContext
+//	pidMetricsCtx: PidMetricsContext
 //	fullMetrics: bool
 //	buf: the buffer to write metrics into
 //
@@ -244,7 +276,7 @@ func (psc PidStarttimeCache) resolvePidStarttime(
 //	The error condition, if any
 func GeneratePidMetrics(
 	pidTid PidTidPair,
-	ctx *PidMetricsContext,
+	pidMetricsCtx *PidMetricsContext,
 	buf *bytes.Buffer,
 ) error {
 	var proc procfs.Proc
@@ -257,13 +289,13 @@ func GeneratePidMetrics(
 	var procDir string
 	var generatedCount uint64 = 0
 
-	pmc := ctx.pmc
-	psc := ctx.psc
-	pmStats := ctx.pmStats
+	pmc := pidMetricsCtx.pmc
+	psc := pidMetricsCtx.psc
+	pmStats := pidMetricsCtx.pmStats
 
 	pid, tid := pidTid.pid, pidTid.tid
 	isForPid := tid == 0
-	isActive, fullMetrics, prevDeleted := false, ctx.fullMetricsFactor <= 1, false
+	isActive, fullMetrics, prevDeleted := false, pidMetricsCtx.fullMetricsFactor <= 1, false
 
 	// Cache entry: new v. update:
 	pmce, exists := pmc[pidTid]
@@ -306,11 +338,11 @@ func GeneratePidMetrics(
 	}()
 
 	if isForPid {
-		proc, err = ctx.fs.Proc(pid)
-		procDir = filepath.Join(ctx.procfsRoot, strconv.Itoa(pid))
+		proc, err = pidMetricsCtx.fs.Proc(pid)
+		procDir = filepath.Join(pidMetricsCtx.procfsRoot, strconv.Itoa(pid))
 	} else {
-		proc, err = ctx.fs.Thread(pid, tid)
-		procDir = filepath.Join(ctx.procfsRoot, strconv.Itoa(pid), "task", strconv.Itoa(tid))
+		proc, err = pidMetricsCtx.fs.Thread(pid, tid)
+		procDir = filepath.Join(pidMetricsCtx.procfsRoot, strconv.Itoa(pid), "task", strconv.Itoa(tid))
 	}
 	if err != nil {
 		return err
@@ -325,7 +357,7 @@ func GeneratePidMetrics(
 		// pseudo-categorical metrics:
 		clearProcPidMetrics(
 			pmce,
-			strconv.FormatInt(ctx.timeNow().UnixMilli(), 10),
+			strconv.FormatInt(pidMetricsCtx.timeNow().UnixMilli(), 10),
 			buf,
 			&generatedCount,
 		)
@@ -337,16 +369,16 @@ func GeneratePidMetrics(
 	}
 
 	if exists {
-		if ctx.activeThreshold == 0 ||
-			(procStat.UTime+procStat.STime)-(pmce.ProcStat.UTime+pmce.ProcStat.STime) >= ctx.activeThreshold {
+		if pidMetricsCtx.activeThreshold == 0 ||
+			(procStat.UTime+procStat.STime)-(pmce.ProcStat.UTime+pmce.ProcStat.STime) >= pidMetricsCtx.activeThreshold {
 			isActive = true
 		}
-		if ctx.fullMetricsFactor > 1 {
+		if pidMetricsCtx.fullMetricsFactor > 1 {
 			pmce.FullMetricsCycleNum += 1
-			if pmce.FullMetricsCycleNum > ctx.fullMetricsFactor {
+			if pmce.FullMetricsCycleNum > pidMetricsCtx.fullMetricsFactor {
 				pmce.FullMetricsCycleNum = 1
 			}
-			if pmce.FullMetricsCycleNum == ctx.fullMetricsFactor {
+			if pmce.FullMetricsCycleNum == pidMetricsCtx.fullMetricsFactor {
 				fullMetrics = true
 			}
 		}
@@ -378,7 +410,7 @@ func GeneratePidMetrics(
 	}
 
 	// Prometheus timestamp: milliseconds since epoch:
-	timestamp := ctx.timeNow().UnixMilli()
+	timestamp := pidMetricsCtx.timeNow().UnixMilli()
 	// As string, for metrics generation:
 	metricTs := strconv.FormatInt(timestamp, 10)
 
@@ -395,24 +427,24 @@ func GeneratePidMetrics(
 			RawCgroup:  rawCgroup,
 			RawCmdline: rawCmdline,
 		}
-		if ctx.fullMetricsFactor > 1 {
-			pmce.FullMetricsCycleNum = ctx.GetFullMetricsCycleSeed()
+		if pidMetricsCtx.fullMetricsFactor > 1 {
+			pmce.FullMetricsCycleNum = pidMetricsCtx.GetFullMetricsCycleSeed()
 		}
 		if isForPid {
 			pmce.CommonLabels = fmt.Sprintf(
 				pidMetricCommonLabelsFmt,
-				ctx.hostname,
+				pidMetricsCtx.hostname,
 				procStat.PID,
 				procStat.Starttime,
 			)
 		} else {
-			starttime, err := psc.resolvePidStarttime(pid, ctx.fs, pmc)
+			starttime, err := psc.resolvePidStarttime(pid, pidMetricsCtx.fs, pmc)
 			if err != nil {
 				return err
 			}
 			pmce.CommonLabels = fmt.Sprintf(
 				tidMetricCommonLabelsFmt,
-				ctx.hostname,
+				pidMetricsCtx.hostname,
 				pid,
 				starttime,
 				procStat.PID,
@@ -583,7 +615,7 @@ func GeneratePidMetrics(
 			"%s{%s} %.06f %s\n",
 			PROC_PID_STAT_UTIME_SECONDS_METRIC_NAME,
 			commonLabels,
-			float64(procStat.UTime)*ctx.clktckSec,
+			float64(procStat.UTime)*pidMetricsCtx.clktckSec,
 			metricTs,
 		)
 		pCpuChanged = true
@@ -597,7 +629,7 @@ func GeneratePidMetrics(
 			"%s{%s} %.06f %s\n",
 			PROC_PID_STAT_STIME_SECONDS_METRIC_NAME,
 			commonLabels,
-			float64(procStat.STime)*ctx.clktckSec,
+			float64(procStat.STime)*pidMetricsCtx.clktckSec,
 			metricTs,
 		)
 		pCpuChanged = true
@@ -611,7 +643,7 @@ func GeneratePidMetrics(
 			"%s{%s} %.06f %s\n",
 			PROC_PID_STAT_CUTIME_SECONDS_METRIC_NAME,
 			commonLabels,
-			float64(procStat.CUTime)*ctx.clktckSec,
+			float64(procStat.CUTime)*pidMetricsCtx.clktckSec,
 			metricTs,
 		)
 		generatedCount += 1
@@ -624,7 +656,7 @@ func GeneratePidMetrics(
 			"%s{%s} %.06f %s\n",
 			PROC_PID_STAT_CSTIME_SECONDS_METRIC_NAME,
 			commonLabels,
-			float64(procStat.CSTime)*ctx.clktckSec,
+			float64(procStat.CSTime)*pidMetricsCtx.clktckSec,
 			metricTs,
 		)
 		generatedCount += 1
@@ -632,11 +664,11 @@ func GeneratePidMetrics(
 
 	// %CPU, but only if there was a previous pass:
 	if exists && (fullMetrics || pCpuChanged) {
-		// %CPU = (procStat.XTime - pmce.ProcStat.XTime) * ctx.clktckSec / ((timestamp - pmce.timestamp)/1000) * 100
+		// %CPU = (procStat.XTime - pmce.ProcStat.XTime) * pidMetricsCtx.clktckSec / ((timestamp - pmce.timestamp)/1000) * 100
 		dUTime := procStat.UTime - pmce.ProcStat.UTime
 		dSTime := procStat.STime - pmce.ProcStat.STime
 		dTimeSec := float64(timestamp-pmce.Timestamp) / 1000. // Prometheus millisec -> sec
-		pCpuFactor := ctx.clktckSec / dTimeSec * 100.
+		pCpuFactor := pidMetricsCtx.clktckSec / dTimeSec * 100.
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %.02f %s\n",
@@ -1064,7 +1096,7 @@ func GeneratePidMetrics(
 	}
 
 	// Update the cache entry:
-	pmce.PassNum = ctx.passNum
+	pmce.PassNum = pidMetricsCtx.passNum
 	pmce.Timestamp = timestamp
 
 	return nil
@@ -1111,25 +1143,26 @@ func clearProcPidMetrics(
 }
 
 // One pass for all PID[,TIDs] assigned to this scanner:
-func GenerateAllPidMetrics(ctx *PidMetricsContext) {
+func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
+	pidMetricsCtx := mGenCtx.(*PidMetricsContext)
 	// Pass timestamp:
-	timestamp := ctx.timeNow().UnixMilli()
+	timestamp := pidMetricsCtx.timeNow().UnixMilli()
 
 	// Pass init:
-	ctx.passNum += 1
-	bufPool, wChan, passNum := ctx.bufPool, ctx.wChan, ctx.passNum
+	pidMetricsCtx.passNum += 1
+	bufPool, wChan, passNum := pidMetricsCtx.bufPool, pidMetricsCtx.wChan, pidMetricsCtx.passNum
 
 	// Get the pid list:
-	pidList := ctx.getPids(ctx.pidListPart)
+	pidList := pidMetricsCtx.getPids(pidMetricsCtx.pidListPart)
 
 	// Iterate through the (sorted) list and generate metrics:
-	ctx.ClearPidStarttimeCache()
-	ctx.ClearStats()
+	pidMetricsCtx.ClearPidStarttimeCache()
+	pidMetricsCtx.ClearStats()
 	buf := bufPool.GetBuffer()
 	for _, pidTid := range pidList {
-		err := GeneratePidMetrics(pidTid, ctx, buf)
+		err := GeneratePidMetrics(pidTid, pidMetricsCtx, buf)
 		if err != nil {
-			Log.Warnf("GeneratePidMetrics(%v): %s", pidTid, err)
+			PidMetricsLog.Warnf("GeneratePidMetrics(%v): %s", pidTid, err)
 		}
 		if buf.Len() >= BUF_MAX_SIZE {
 			if wChan != nil {
@@ -1144,10 +1177,10 @@ func GenerateAllPidMetrics(ctx *PidMetricsContext) {
 	// Clear expired PIDs:
 	metricTs := strconv.FormatInt(timestamp, 10)
 	dCnt, pmcCnt := uint64(0), uint64(0)
-	pmc := ctx.pmc
+	pmc := pidMetricsCtx.pmc
 	for pidTid, pmce := range pmc {
 		if pmce.PassNum != passNum {
-			clearProcPidMetrics(pmce, metricTs, buf, &ctx.pmStats.GeneratedCount)
+			clearProcPidMetrics(pmce, metricTs, buf, &pidMetricsCtx.pmStats.GeneratedCount)
 			delete(pmc, pidTid)
 			dCnt += 1
 			if buf.Len() >= BUF_MAX_SIZE {
@@ -1162,8 +1195,8 @@ func GenerateAllPidMetrics(ctx *PidMetricsContext) {
 			pmcCnt += 1
 		}
 	}
-	ctx.pmStats.DeletedCount += dCnt
-	ctx.pmStats.PmcCount = pmcCnt
+	pidMetricsCtx.pmStats.DeletedCount += dCnt
+	pidMetricsCtx.pmStats.PmcCount = pmcCnt
 	// Flush the last buffer:
 	if buf.Len() > 0 && wChan != nil {
 		wChan <- buf
