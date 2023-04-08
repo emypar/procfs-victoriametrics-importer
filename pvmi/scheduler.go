@@ -27,6 +27,10 @@ import (
 	"time"
 )
 
+const (
+	SCHEDULER_TIMER_ID = "scheduler"
+)
+
 var SchedulerLog = Log.WithField(
 	COMPONENT_FIELD_NAME,
 	"Scheduler",
@@ -67,10 +71,19 @@ type MetricsWorkUnit struct {
 	mGenCtx MetricsGenContext
 }
 
+type SchedulerCycleSync struct {
+	// The test goroutine writes to this channel to start a scheduling cycle:
+	start chan bool
+	// The scheduler goroutine writes to this channel to indicate the end of the
+	// scheduling cycle:
+	done chan bool
+}
+
 type SchedulerContext struct {
 	timeHeap        *TimeHeap
 	timeWorkUnitMap map[time.Time][]*MetricsWorkUnit
 	todo            chan *MetricsWorkUnit
+
 	// The logistics for stopping the scheduler, needed during
 	// testing:
 	stopCtx      context.Context
@@ -80,12 +93,16 @@ type SchedulerContext struct {
 	// Mocks during testing:
 	timeNowFn  TimeNowFn
 	newTimerFn NewMockableTimerFn
+
+	// Test <-> scheduler sync channels:
+	cycleSync *SchedulerCycleSync
 }
 
 func NewSchedulerContext(
 	todo chan *MetricsWorkUnit,
 	newTimerFn NewMockableTimerFn,
 	timeNowFn TimeNowFn,
+	cycleSync *SchedulerCycleSync,
 ) *SchedulerContext {
 	if timeNowFn == nil {
 		timeNowFn = time.Now
@@ -100,6 +117,7 @@ func NewSchedulerContext(
 		stopWg:          &sync.WaitGroup{},
 		timeNowFn:       timeNowFn,
 		newTimerFn:      newTimerFn,
+		cycleSync:       cycleSync,
 	}
 	schedCtx.stopCtx, schedCtx.stopCancelFn = context.WithCancel(context.Background())
 	heap.Init(schedCtx.timeHeap)
@@ -109,42 +127,60 @@ func NewSchedulerContext(
 var GlobalSchedulerContext *SchedulerContext
 
 func SetGlobalSchedulerContext(todo chan *MetricsWorkUnit) {
-	GlobalSchedulerContext = NewSchedulerContext(todo, nil, nil)
+	GlobalSchedulerContext = NewSchedulerContext(todo, nil, nil, nil)
 }
 
 func (schedCtx *SchedulerContext) Start() error {
 	if len(*schedCtx.timeHeap) == 0 {
-		return fmt.Errorf("Empty schedule, cannot start")
+		return fmt.Errorf("empty schedule, cannot start")
 	}
 
-	SchedulerLog.Info("Start Scheduler")
+	SchedulerLog.Info("Start scheduler")
+	timer := schedCtx.newTimerFn(time.Hour, SCHEDULER_TIMER_ID)
+	if !timer.Stop() {
+		<-timer.GetChannel()
+	}
+	cycleSync := schedCtx.cycleSync
 	schedCtx.stopWg.Add(1)
 	go func() {
 		defer func() {
 			schedCtx.stopWg.Done()
 		}()
 
-		timer := schedCtx.newTimerFn(time.Hour, "scheduler")
-		if !timer.Stop() {
-			<-timer.GetChannel()
-		}
+		SchedulerLog.Info("Scheduler loop started")
 		for {
+			// step is used during testing to sync w/ the goroutine at the
+			// beginning and at the end of each scheduling cycle:
+
+			// Wait to be allowed to start:
+			if cycleSync != nil {
+				<-cycleSync.start
+			}
+			timeNow := schedCtx.timeNowFn()
 			nextWUTime := heap.Pop(schedCtx.timeHeap).(time.Time)
-			pauseTillNextWUTime := time.Until(nextWUTime)
+			pauseTillNextWUTime := nextWUTime.Sub(timeNow)
 			if pauseTillNextWUTime < 0 {
 				pauseTillNextWUTime = 0
 			}
 			timer.Reset(pauseTillNextWUTime)
 			select {
 			case <-schedCtx.stopCtx.Done():
+				SchedulerLog.Info("Scheduler loop cancelled")
 				if !timer.Stop() {
 					<-timer.GetChannel()
 				}
 				return
 			case <-timer.GetChannel():
 			}
-			for _, WU := range schedCtx.timeWorkUnitMap[nextWUTime] {
-				schedCtx.AddWU(WU)
+			for _, wu := range schedCtx.timeWorkUnitMap[nextWUTime] {
+				schedCtx.AddWU(wu)
+			}
+			delete(schedCtx.timeWorkUnitMap, nextWUTime)
+
+			// The test goroutine is blocked in read from this channel, awaiting
+			// for the scheduling cycle to complete:
+			if cycleSync != nil {
+				cycleSync.done <- true
 			}
 		}
 	}()
@@ -152,6 +188,7 @@ func (schedCtx *SchedulerContext) Start() error {
 }
 
 func (schedCtx *SchedulerContext) Stop() {
+	SchedulerLog.Info("Stopping the scheduler")
 	schedCtx.stopCancelFn()
 	schedCtx.stopWg.Wait()
 	SchedulerLog.Info("Scheduler stopped")
@@ -161,23 +198,24 @@ func (schedCtx *SchedulerContext) Add(mGenFn MetricsGenFn, mGenCtx MetricsGenCon
 	schedCtx.AddWU(&MetricsWorkUnit{mGenFn, mGenCtx})
 }
 
-func (schedCtx *SchedulerContext) AddWU(WU *MetricsWorkUnit) {
+func (schedCtx *SchedulerContext) AddWU(wu *MetricsWorkUnit) {
 	// -> TODO:
-	schedCtx.todo <- WU
+	schedCtx.todo <- wu
 	// The next time is the next multiple of the interval, in milliseconds:
-	intervalMilliseconds := WU.mGenCtx.GetInterval().Milliseconds()
+	intervalMilliseconds := wu.mGenCtx.GetInterval().Milliseconds()
+	timeNow := schedCtx.timeNowFn()
 	nextWUTime := time.UnixMilli(
-		(schedCtx.timeNowFn().UnixMilli()/intervalMilliseconds + 1) * intervalMilliseconds,
+		(timeNow.UnixMilli()/intervalMilliseconds + 1) * intervalMilliseconds,
 	)
 	// Add to the list for that time (create it as needed):
 	_, exists := schedCtx.timeWorkUnitMap[nextWUTime]
 	if !exists {
-		// New time, add it to the heap
+		// New time, add it to the heap:
 		heap.Push(schedCtx.timeHeap, nextWUTime)
 		schedCtx.timeWorkUnitMap[nextWUTime] = make([]*MetricsWorkUnit, 0)
 	}
 	schedCtx.timeWorkUnitMap[nextWUTime] = append(
 		schedCtx.timeWorkUnitMap[nextWUTime],
-		WU,
+		wu,
 	)
 }

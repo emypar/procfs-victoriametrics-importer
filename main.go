@@ -8,6 +8,11 @@ import (
 	"github.com/eparparita/procfs-victoriametrics-importer/pvmi"
 )
 
+var MainLog = pvmi.Log.WithField(
+	pvmi.COMPONENT_FIELD_NAME,
+	"Main",
+)
+
 func main() {
 	flag.Parse()
 
@@ -17,7 +22,7 @@ func main() {
 		return
 	}
 
-	pvmi.Log.Info("Start PVMI")
+	MainLog.Info("Start PVMI")
 
 	pvmi.SetGlobalMetricsWriteChannelFromArgs()
 	pvmi.SetGlobalBufferPoolFromArgs()
@@ -30,7 +35,7 @@ func main() {
 	} else {
 		err = pvmi.StartGlobalHttpSenderPoolFromArgs()
 		if err != nil {
-			pvmi.Log.Fatal(err)
+			MainLog.Fatal(err)
 			return
 		}
 		err = pvmi.StartGlobalCompressorPoolFromArgs(
@@ -39,7 +44,7 @@ func main() {
 			pvmi.GlobalHttpSenderPool.Send,
 		)
 		if err != nil {
-			pvmi.Log.Fatal(err)
+			MainLog.Fatal(err)
 			return
 		}
 	}

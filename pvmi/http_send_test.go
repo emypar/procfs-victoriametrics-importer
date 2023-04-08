@@ -30,12 +30,6 @@ var TestHttpSendUrlSpecList = []string{
 	"(http://1.1.1.0:8080/import,http://1.1.1.0:8080/health),http://1.1.1.1:8080,http://1.1.1.2:8080",
 }
 
-func makeNewTimerFn(mockableTimers *testutils.MockTimerPool) NewMockableTimerFn {
-	return func(d time.Duration, id string) MockableTimer {
-		return MockableTimer(mockableTimers.NewMockTimer(d, id))
-	}
-}
-
 func prepareHttpSenderPoolForTest(
 	urlSpecList string,
 	// The list on indexes in urlSpecList that should be started as healthy. If
@@ -71,7 +65,10 @@ func prepareHttpSenderPoolForTest(
 	config.urlSpecList = urlSpecList
 	config.httpClient = testutils.NewHttpClientDoerMock()
 	mockableTimers = testutils.NewMockTimePool()
-	config.newTimerFn = makeNewTimerFn(mockableTimers)
+	newTimerFn := func(d time.Duration, id string) MockableTimer {
+		return MockableTimer(mockableTimers.NewMockTimer(d, id))
+	}
+	config.newTimerFn = newTimerFn
 	pool, err = NewHttpSenderPool(config)
 	if err != nil {
 		return
