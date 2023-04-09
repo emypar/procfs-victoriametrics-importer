@@ -44,7 +44,7 @@ const (
 )
 
 var CompressorLog = Log.WithField(
-	COMPONENT_FIELD_NAME,
+	LOGGER_COMPONENT_FIELD_NAME,
 	"Compressor",
 )
 

@@ -31,7 +31,7 @@ const (
 )
 
 var SchedulerLog = Log.WithField(
-	COMPONENT_FIELD_NAME,
+	LOGGER_COMPONENT_FIELD_NAME,
 	"Scheduler",
 )
 

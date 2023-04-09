@@ -103,7 +103,7 @@ func NewBufferPool(maxSize int) *BufferPool {
 var GlobalBufPool *BufferPool = NewBufferPool(DEFAULT_BUF_POOL_MAX_SIZE)
 
 var BufferPoolLog = Log.WithField(
-	COMPONENT_FIELD_NAME,
+	LOGGER_COMPONENT_FIELD_NAME,
 	"BufferPool",
 )
 

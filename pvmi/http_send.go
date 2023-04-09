@@ -29,7 +29,7 @@ const (
 )
 
 var HttpSendLog = Log.WithField(
-	COMPONENT_FIELD_NAME,
+	LOGGER_COMPONENT_FIELD_NAME,
 	"HttpSend",
 )
 
