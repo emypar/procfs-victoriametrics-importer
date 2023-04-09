@@ -70,7 +70,8 @@ func todoToIdList(todo chan *MetricsWorkUnit) []string {
 	return idList
 }
 
-func testScheduler(t *testing.T, tc *SchedulerTestCase) {
+func testScheduler(t *testing.T, tc *SchedulerTestCase, startSchedFirst bool) {
+
 	mockableTimers := testutils.NewMockTimePool()
 	newTimerFn := func(d time.Duration, id string) MockableTimer {
 		return MockableTimer(mockableTimers.NewMockTimer(d, id))
@@ -85,7 +86,6 @@ func testScheduler(t *testing.T, tc *SchedulerTestCase) {
 	schedCtx := NewSchedulerContext(todo, newTimerFn, timeNowFn, cycleSync)
 
 	schedStarted := false
-
 	defer func() {
 		if schedStarted {
 			// Advance the scheduler goroutine to the timer, where it can be
@@ -94,6 +94,11 @@ func testScheduler(t *testing.T, tc *SchedulerTestCase) {
 			schedCtx.Stop()
 		}
 	}()
+
+	if startSchedFirst {
+		schedCtx.Start()
+		schedStarted = true
+	}
 
 	wantIds := tc.wantIds
 
@@ -220,14 +225,17 @@ func TestScheduler(t *testing.T) {
 		for i := 0; i < len(tc.wantIds); i++ {
 			sort.Strings(tc.wantIds[i])
 		}
-		t.Run(
-			fmt.Sprintf(
-				"mGenCtxList=%s/wantIdList=%s",
-				SchedulerTestMGenCtxListToString(tc.mGenCtxList),
-				SchedulerTestWantIdsToString(tc.wantIds),
-			),
-			func(t *testing.T) { testScheduler(t, tc) },
-		)
+		for _, startSchedFirst := range []bool{false, true} {
+			t.Run(
+				fmt.Sprintf(
+					"startSchedFirst=%v,mGenCtxList=%s/wantIdList=%s",
+					startSchedFirst,
+					SchedulerTestMGenCtxListToString(tc.mGenCtxList),
+					SchedulerTestWantIdsToString(tc.wantIds),
+				),
+				func(t *testing.T) { testScheduler(t, tc, startSchedFirst) },
+			)
+		}
 	}
 }
 
