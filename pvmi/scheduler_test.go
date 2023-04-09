@@ -114,10 +114,7 @@ func testScheduler(t *testing.T, tc *SchedulerTestCase) {
 	// Execute schedule steps for the rest of the want list:
 	for cycleN++; cycleN < len(wantIds); cycleN++ {
 		if !schedStarted {
-			err := schedCtx.Start()
-			if err != nil {
-				t.Fatal(err)
-			}
+			schedCtx.Start()
 			schedStarted = true
 		}
 		// Assume everything happens on time, i.e. the time now is when the next
@@ -232,4 +229,11 @@ func TestScheduler(t *testing.T) {
 			func(t *testing.T) { testScheduler(t, tc) },
 		)
 	}
+}
+
+func TestSchedulerStopEmpty(y *testing.T) {
+	todo := make(chan *MetricsWorkUnit, 1)
+	schedCtx := NewSchedulerContext(todo, nil, nil, nil)
+	schedCtx.Start()
+	schedCtx.Stop()
 }

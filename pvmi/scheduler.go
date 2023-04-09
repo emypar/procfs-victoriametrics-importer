@@ -22,7 +22,6 @@ package pvmi
 import (
 	"container/heap"
 	"context"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -80,6 +79,7 @@ type SchedulerCycleSync struct {
 }
 
 type SchedulerContext struct {
+	cond            *sync.Cond
 	timeHeap        *TimeHeap
 	timeWorkUnitMap map[time.Time][]*MetricsWorkUnit
 	todo            chan *MetricsWorkUnit
@@ -111,6 +111,7 @@ func NewSchedulerContext(
 		newTimerFn = NewRealTimer
 	}
 	schedCtx := &SchedulerContext{
+		cond:            sync.NewCond(&sync.Mutex{}),
 		timeHeap:        &TimeHeap{},
 		timeWorkUnitMap: make(map[time.Time][]*MetricsWorkUnit),
 		todo:            todo,
@@ -130,11 +131,7 @@ func SetGlobalSchedulerContext(todo chan *MetricsWorkUnit) {
 	GlobalSchedulerContext = NewSchedulerContext(todo, nil, nil, nil)
 }
 
-func (schedCtx *SchedulerContext) Start() error {
-	if len(*schedCtx.timeHeap) == 0 {
-		return fmt.Errorf("empty schedule, cannot start")
-	}
-
+func (schedCtx *SchedulerContext) Start() {
 	SchedulerLog.Info("Start scheduler")
 	timer := schedCtx.newTimerFn(time.Hour, SCHEDULER_TIMER_ID)
 	if !timer.Stop() {
@@ -142,17 +139,36 @@ func (schedCtx *SchedulerContext) Start() error {
 	}
 	cycleSync := schedCtx.cycleSync
 	schedCtx.stopWg.Add(1)
+
+	// In order to be able to stop the scheduler before the 1st work unit is
+	// added, the loop goroutine should reach the `Block until at least one work
+	// unit is added' section. Use a simple channel to block this start function
+	// until the goroutine writes to it, thus signaling that it is ready:s
+	loopGoroutineInitialized := make(chan bool, 1)
 	go func() {
 		defer func() {
 			schedCtx.stopWg.Done()
 		}()
 
+		// Block until at least one work unit is added:
+		schedCtx.cond.L.Lock()
+		loopGoroutineInitialized <- true
+		for len(*schedCtx.timeHeap) == 0 {
+			SchedulerLog.Info("Scheduler waiting for the first work unit")
+			schedCtx.cond.Wait()
+			select {
+			case <-schedCtx.stopCtx.Done():
+				SchedulerLog.Info("Scheduler cancelled")
+				return
+			default:
+			}
+		}
+		schedCtx.cond.L.Unlock()
+
 		SchedulerLog.Info("Scheduler loop started")
 		for {
-			// step is used during testing to sync w/ the goroutine at the
-			// beginning and at the end of each scheduling cycle:
-
-			// Wait to be allowed to start:
+			// If invoked from a test goroutine, wait for signal to start a
+			// scheduling cycle:
 			if cycleSync != nil {
 				<-cycleSync.start
 			}
@@ -172,30 +188,43 @@ func (schedCtx *SchedulerContext) Start() error {
 				return
 			case <-timer.GetChannel():
 			}
+			schedCtx.cond.L.Lock()
 			for _, wu := range schedCtx.timeWorkUnitMap[nextWUTime] {
 				schedCtx.AddWU(wu)
 			}
 			delete(schedCtx.timeWorkUnitMap, nextWUTime)
+			schedCtx.cond.L.Unlock()
 
-			// The test goroutine is blocked in read from this channel, awaiting
-			// for the scheduling cycle to complete:
+			// If invoked from a test goroutine, signal cycle completion:
 			if cycleSync != nil {
 				cycleSync.done <- true
 			}
 		}
 	}()
-	return nil
+	<-loopGoroutineInitialized
+	SchedulerLog.Info("Scheduler started")
 }
 
 func (schedCtx *SchedulerContext) Stop() {
 	SchedulerLog.Info("Stopping the scheduler")
+	schedCtx.cond.L.Lock()
+	if len(*schedCtx.timeHeap) == 0 {
+		schedCtx.cond.Broadcast()
+	}
+	schedCtx.cond.L.Unlock()
 	schedCtx.stopCancelFn()
 	schedCtx.stopWg.Wait()
 	SchedulerLog.Info("Scheduler stopped")
 }
 
 func (schedCtx *SchedulerContext) Add(mGenFn MetricsGenFn, mGenCtx MetricsGenContext) {
+	schedCtx.cond.L.Lock()
+	wasEmpty := len(*schedCtx.timeHeap) == 0
 	schedCtx.AddWU(&MetricsWorkUnit{mGenFn, mGenCtx})
+	if wasEmpty {
+		schedCtx.cond.Broadcast()
+	}
+	schedCtx.cond.L.Unlock()
 }
 
 func (schedCtx *SchedulerContext) AddWU(wu *MetricsWorkUnit) {
