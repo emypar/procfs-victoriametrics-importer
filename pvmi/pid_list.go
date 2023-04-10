@@ -16,6 +16,8 @@ const (
 	PID_LIST_CACHE_ALL_ENABLED_FLAG = PID_LIST_CACHE_PID_ENABLED_FLAG | PID_LIST_CACHE_TID_ENABLED_FLAG
 )
 
+var GlobalPidSelection uint32
+
 type GetPidsFn func(int) []PidTidPair
 
 var GlobalPidListCache *PidListCache

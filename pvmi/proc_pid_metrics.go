@@ -48,8 +48,8 @@ var PidMetricsLog = Log.WithField(
 )
 
 var pidMetricCommonLabelsFmt = fmt.Sprintf(
-	`%s="%%s",%s="%%d",%s="%%d"`,
-	HOSTNAME_LABEL_NAME, PROC_PID_METRIC_PID_LABEL_NAME, PROC_PID_METRIC_STARTTIME_LABEL_NAME,
+	`%s="%%s",%s="%%s",%s="%%d",%s="%%d"`,
+	HOSTNAME_LABEL_NAME, SOURCE_LABEL_NAME, PROC_PID_METRIC_PID_LABEL_NAME, PROC_PID_METRIC_STARTTIME_LABEL_NAME,
 )
 var tidMetricCommonLabelsFmt = pidMetricCommonLabelsFmt + "," + fmt.Sprintf(
 	`%s="%%d",%s="%%d"`,
@@ -102,6 +102,7 @@ type PidMetricsContext struct {
 	pmStats *PidMetricsStats
 	// The following are useful for testing, in lieu of mocks:
 	hostname  string
+	source    string
 	clktckSec float64
 	timeNow   TimeNowFn
 	getPids   func(int) []PidTidPair
@@ -120,6 +121,7 @@ func NewPidMetricsContext(
 	activeThreshold uint,
 	// needed for testing:
 	hostname string,
+	source string,
 	clktckSec float64,
 	timeNow TimeNowFn,
 	wChan chan *bytes.Buffer,
@@ -127,7 +129,10 @@ func NewPidMetricsContext(
 	bufPool *BufferPool,
 ) (*PidMetricsContext, error) {
 	if hostname == "" {
-		hostname = Hostname
+		hostname = GlobalMetricsHostname
+	}
+	if source == "" {
+		source = GlobalMetricsSource
 	}
 	if clktckSec <= 0 {
 		clktckSec = ClktckSec
@@ -160,6 +165,7 @@ func NewPidMetricsContext(
 		passNum:           0,
 		wChan:             wChan,
 		hostname:          hostname,
+		source:            source,
 		clktckSec:         clktckSec,
 		timeNow:           timeNow,
 		getPids:           getPids,
@@ -168,6 +174,29 @@ func NewPidMetricsContext(
 	return pidMetricsCtx, nil
 }
 
+func NewPidMetricsContextFromArgs(
+	interval time.Duration,
+	procfsRoot string,
+	pidListPart int,
+	fullMetricsFactor int,
+	activeThreshold uint,
+) (*PidMetricsContext, error) {
+	return NewPidMetricsContext(
+		interval,
+		procfsRoot,
+		pidListPart,
+		fullMetricsFactor,
+		activeThreshold,
+		// needed for testing:
+		"",  // hostname string,
+		"",  // source string,
+		0.,  // clktckSec float64,
+		nil, // timeNow TimeNowFn,
+		nil, // wChan chan *bytes.Buffer,
+		nil, // getPids GetPidsFn,
+		nil, // bufPool *BufferPool,
+	)
+}
 func (pidMetricsCtx *PidMetricsContext) ClearPidStarttimeCache() {
 	pidMetricsCtx.psc = PidStarttimeCache{}
 }
@@ -434,6 +463,7 @@ func GeneratePidMetrics(
 			pmce.CommonLabels = fmt.Sprintf(
 				pidMetricCommonLabelsFmt,
 				pidMetricsCtx.hostname,
+				pidMetricsCtx.source,
 				procStat.PID,
 				procStat.Starttime,
 			)
@@ -445,6 +475,7 @@ func GeneratePidMetrics(
 			pmce.CommonLabels = fmt.Sprintf(
 				tidMetricCommonLabelsFmt,
 				pidMetricsCtx.hostname,
+				pidMetricsCtx.source,
 				pid,
 				starttime,
 				procStat.PID,
@@ -1203,4 +1234,15 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 	} else {
 		bufPool.ReturnBuffer(buf)
 	}
+}
+
+func GetPidMetricsGeneratorsCountFromArgs() int {
+	numPidMetricsGenerators := *NumPidMetricsGeneratorsArg
+	if numPidMetricsGenerators < 0 {
+		numPidMetricsGenerators = AvailableCpusCount
+		if numPidMetricsGenerators > MAX_NUM_PID_METRICS_GENERATORS {
+			numPidMetricsGenerators = MAX_NUM_PID_METRICS_GENERATORS
+		}
+	}
+	return numPidMetricsGenerators
 }

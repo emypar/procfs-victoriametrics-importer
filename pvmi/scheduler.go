@@ -22,17 +22,35 @@ package pvmi
 import (
 	"container/heap"
 	"context"
+	"flag"
 	"sync"
 	"time"
 )
 
 const (
+	// The lengths of the TODO channel is 2 x number of metrics generators. The
+	// number below will be adjusted + 2x(number of pid metrics generators - 1)
+	// since the latter is determined at runtime via command line args:
+	TODO_CHANNEL_LENGTH = 32
+
+	// TimerMock IDF (for testing):
 	SCHEDULER_TIMER_ID = "scheduler"
+
+	DEFAULT_SCHEDULER_NUM_WORKERS = -1 // i.e. based on #PID metrics generators
 )
 
 var SchedulerLog = Log.WithField(
 	LOGGER_COMPONENT_FIELD_NAME,
 	"Scheduler",
+)
+
+var SchedulerNumWorkersArg = flag.Int(
+	"scheduler-num-workers",
+	DEFAULT_SCHEDULER_NUM_WORKERS,
+	FormatFlagUsage(`
+	The number of worker goroutines used to invoke metrics generators. If -1
+	then it is based on the number of PID metrics generators + 2.
+	`),
 )
 
 type TimeHeap []time.Time
@@ -83,6 +101,7 @@ type SchedulerContext struct {
 	timeHeap        *TimeHeap
 	timeWorkUnitMap map[time.Time][]*MetricsWorkUnit
 	todo            chan *MetricsWorkUnit
+	closeTodoOnStop bool
 
 	// The logistics for stopping the scheduler, needed during
 	// testing:
@@ -100,6 +119,8 @@ type SchedulerContext struct {
 
 func NewSchedulerContext(
 	todo chan *MetricsWorkUnit,
+	closeTodoOnStop bool,
+	// params needed for testing:
 	newTimerFn NewMockableTimerFn,
 	timeNowFn TimeNowFn,
 	cycleSync *SchedulerCycleSync,
@@ -115,6 +136,7 @@ func NewSchedulerContext(
 		timeHeap:        &TimeHeap{},
 		timeWorkUnitMap: make(map[time.Time][]*MetricsWorkUnit),
 		todo:            todo,
+		closeTodoOnStop: closeTodoOnStop,
 		stopWg:          &sync.WaitGroup{},
 		timeNowFn:       timeNowFn,
 		newTimerFn:      newTimerFn,
@@ -123,12 +145,6 @@ func NewSchedulerContext(
 	schedCtx.stopCtx, schedCtx.stopCancelFn = context.WithCancel(context.Background())
 	heap.Init(schedCtx.timeHeap)
 	return schedCtx
-}
-
-var GlobalSchedulerContext *SchedulerContext
-
-func SetGlobalSchedulerContext(todo chan *MetricsWorkUnit) {
-	GlobalSchedulerContext = NewSchedulerContext(todo, nil, nil, nil)
 }
 
 func (schedCtx *SchedulerContext) Start() {
@@ -154,11 +170,11 @@ func (schedCtx *SchedulerContext) Start() {
 		schedCtx.cond.L.Lock()
 		loopGoroutineInitialized <- true
 		for len(*schedCtx.timeHeap) == 0 {
-			SchedulerLog.Info("Scheduler waiting for the first work unit")
+			SchedulerLog.Info("Scheduler loop waiting for the first work unit")
 			schedCtx.cond.Wait()
 			select {
 			case <-schedCtx.stopCtx.Done():
-				SchedulerLog.Info("Scheduler cancelled")
+				SchedulerLog.Info("Scheduler loop cancelled")
 				return
 			default:
 			}
@@ -213,6 +229,9 @@ func (schedCtx *SchedulerContext) Stop() {
 	}
 	schedCtx.cond.L.Unlock()
 	schedCtx.stopCancelFn()
+	if schedCtx.closeTodoOnStop {
+		close(schedCtx.todo)
+	}
 	schedCtx.stopWg.Wait()
 	SchedulerLog.Info("Scheduler stopped")
 }
@@ -247,4 +266,34 @@ func (schedCtx *SchedulerContext) AddWU(wu *MetricsWorkUnit) {
 		schedCtx.timeWorkUnitMap[nextWUTime],
 		wu,
 	)
+}
+
+var GlobalSchedulerContext *SchedulerContext
+
+func startTodoWorker(schedCtx *SchedulerContext, workerId int) {
+	SchedulerLog.Infof("Start scheduler worker# %d", workerId)
+	schedCtx.stopWg.Add(1)
+
+	go func() {
+		for wu := range schedCtx.todo {
+			wu.mGenFn(wu.mGenCtx)
+		}
+		SchedulerLog.Infof("Scheduler worker# %d stopped (todo closed)", workerId)
+		schedCtx.stopWg.Done()
+	}()
+}
+
+func StartGlobalSchedulerFromArgs() {
+	todoSize := TODO_CHANNEL_LENGTH
+	pidMetricsGenCount := GetPidMetricsGeneratorsCountFromArgs()
+	todoSize += 2 * (pidMetricsGenCount - 1)
+	GlobalSchedulerContext = NewSchedulerContext(
+		make(chan *MetricsWorkUnit, todoSize), true,
+		nil, nil, nil,
+	)
+
+	for workerId := 0; workerId < pidMetricsGenCount+2; workerId++ {
+		startTodoWorker(GlobalSchedulerContext, workerId)
+	}
+	GlobalSchedulerContext.Start()
 }

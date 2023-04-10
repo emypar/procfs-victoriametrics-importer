@@ -23,6 +23,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"flag"
 	"fmt"
 	"sync"
 	"time"
@@ -46,6 +47,51 @@ const (
 var CompressorLog = Log.WithField(
 	LOGGER_COMPONENT_FIELD_NAME,
 	"Compressor",
+)
+
+var CompressorNumCompressorsArg = flag.Int(
+	"compressor-num-workers",
+	DEFAULT_NUM_COMPRESSOR_WORKERS,
+	FormatFlagUsage(fmt.Sprintf(`
+	The number of compressor workers. If -1, then the number will be
+	calculated as min(available CPU#, %d).
+	`, MAX_NUM_COMPRESSOR_WORKERS)),
+)
+
+var CompressorCompressionLevelArg = flag.Int(
+	"compressor-compression-level",
+	DEFAULT_COMPRESSION_LEVEL,
+	FormatFlagUsage(fmt.Sprintf(`
+	Compression level. Use %d for default compression and %d for no
+	compression accordingly.
+	`, gzip.DefaultCompression, gzip.NoCompression)),
+)
+
+var CompressorBatchTargetSizeArg = flag.Int(
+	"compressor-batch-target-size",
+	DEFAULT_COMPRESSED_BATCH_TARGET_SIZE,
+	FormatFlagUsage(`
+	Compress until the current batch reaches this size.
+	`),
+)
+
+var CompressorArgBatchFlushInterval = flag.Float64(
+	"compressor-batch-flush-interval",
+	DEFAULT_COMPRESSED_BATCH_FLUSH_INTERVAL,
+	FormatFlagUsage(`
+	If the current compressed batch doesn't reach the target size in this many
+	seconds since it was started, send it anyway to prevent stale data.
+	`),
+)
+
+var CompressorExponentialDecayAlphaArg = flag.Float64(
+	"compressor-exponential-decay-alpha",
+	DEFAULT_COMPRESSION_FACTOR_ALPHA,
+	FormatFlagUsage(`
+	The estimated compression factor, needed for computing compressed batch
+	size during compression, is revised after each batch using the following
+	formula: CF = (1 - alpha) * batchCF + alpha * CF, alpha = (0..1).
+	`),
 )
 
 type CompressorSenderFunction func(*bytes.Buffer, *BufferPool, string) error
@@ -139,7 +185,7 @@ func StartNewCompressorPool(
 
 func AdjustNCompressors(nCompressors int) int {
 	if nCompressors < 1 {
-		nCompressors = CountAvailableCPUs()
+		nCompressors = AvailableCpusCount
 		if nCompressors > MAX_NUM_COMPRESSOR_WORKERS {
 			nCompressors = MAX_NUM_COMPRESSOR_WORKERS
 		}

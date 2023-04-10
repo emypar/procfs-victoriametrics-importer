@@ -83,7 +83,7 @@ func testScheduler(t *testing.T, tc *SchedulerTestCase, startSchedFirst bool) {
 		start: make(chan bool, 1),
 		done:  make(chan bool, 1),
 	}
-	schedCtx := NewSchedulerContext(todo, newTimerFn, timeNowFn, cycleSync)
+	schedCtx := NewSchedulerContext(todo, false, newTimerFn, timeNowFn, cycleSync)
 
 	schedStarted := false
 	defer func() {
@@ -241,7 +241,12 @@ func TestScheduler(t *testing.T) {
 
 func TestSchedulerStopEmpty(y *testing.T) {
 	todo := make(chan *MetricsWorkUnit, 1)
-	schedCtx := NewSchedulerContext(todo, nil, nil, nil)
+	schedCtx := NewSchedulerContext(todo, false, nil, nil, nil)
 	schedCtx.Start()
 	schedCtx.Stop()
+}
+
+func TestGlobalScheduler(y *testing.T) {
+	StartGlobalSchedulerFromArgs()
+	GlobalSchedulerContext.Stop()
 }

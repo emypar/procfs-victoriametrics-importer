@@ -8,7 +8,7 @@ import functools
 import os
 import time
 
-from metrics_common_test import TestdataProcfsRoot, TestHostname
+from metrics_common_test import TestdataProcfsRoot, TestHostname, TestSource
 from tools_common import ts_to_prometheus_ts
 
 from .common import ProcfsStructBase, proc_pid_dir
@@ -174,10 +174,11 @@ def make_common_labels(
     tid: int = 0,
     procfs_root: str = TestdataProcfsRoot,
     hostname: str = TestHostname,
+    source: str = TestSource,
 ) -> str:
     starttime = load_proc_pid_stat(pid, tid=tid, procfs_root=procfs_root).Starttime
     if tid == 0:
-        return f'''hostname="{hostname}",pid="{pid}",starttime="{starttime}"'''
+        return f'''hostname="{hostname}",source="{source}",pid="{pid}",starttime="{starttime}"'''
     else:
         t_starttime = starttime
         if pid != tid:
@@ -185,6 +186,6 @@ def make_common_labels(
                 pid, tid=0, procfs_root=procfs_root
             ).Starttime
         return (
-            f'''hostname="{hostname}",pid="{pid}",starttime="{starttime}"'''
+            f'''hostname="{hostname}",source="{source}",pid="{pid}",starttime="{starttime}"'''
             f''',tid="{tid}",t_starttime="{t_starttime}"'''
         )

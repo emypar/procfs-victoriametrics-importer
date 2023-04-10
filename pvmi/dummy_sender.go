@@ -4,7 +4,19 @@ package pvmi
 
 import (
 	"bytes"
+	"flag"
 	"os"
+)
+
+var DummySenderArg = flag.String(
+	"dummy-sender",
+	"",
+	FormatFlagUsage(`
+	Test flag, set to discard or stdout in which case the metrics are either
+	ignored, useful to assess the resource utilization of the metrics
+	generators, or displayed to stdout, useful to see examples of actual
+	metrics without need of VictoriaMetrics infra.
+	`),
 )
 
 func StartDummySenderFromArgs(wChan chan *bytes.Buffer, bufPool *BufferPool) {

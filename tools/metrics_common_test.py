@@ -15,3 +15,4 @@ TestdataProcfsRoot = os.path.join(PVMI_TOP_DIR, "testdata/proc")
 TestdataTestCasesDir = os.path.join(PVMI_TOP_DIR, "testdata/testcases")
 TestClktckSec = 0.01
 TestHostname = "test-host"
+TestSource = "testpvmi"

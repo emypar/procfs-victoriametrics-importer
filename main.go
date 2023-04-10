@@ -4,12 +4,13 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/eparparita/procfs-victoriametrics-importer/pvmi"
 )
 
 var MainLog = pvmi.Log.WithField(
-	pvmi.COMPONENT_FIELD_NAME,
+	pvmi.LOGGER_COMPONENT_FIELD_NAME,
 	"Main",
 )
 
@@ -24,8 +25,13 @@ func main() {
 
 	MainLog.Info("Start PVMI")
 
-	pvmi.SetGlobalMetricsWriteChannelFromArgs()
+	err = pvmi.SetCommonMetricsLabelValuesFromArgs()
+	if err != nil {
+		MainLog.Fatal(err)
+		return
+	}
 	pvmi.SetGlobalBufferPoolFromArgs()
+	pvmi.SetGlobalMetricsWriteChannelFromArgs()
 
 	if *pvmi.DummySenderArg != "" {
 		pvmi.StartDummySenderFromArgs(
@@ -49,5 +55,7 @@ func main() {
 		}
 	}
 
-	select {}
+	pvmi.StartGlobalSchedulerFromArgs()
+
+	time.Sleep(34 * time.Hour)
 }

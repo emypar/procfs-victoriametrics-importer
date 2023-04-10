@@ -7,6 +7,8 @@ package pvmi
 
 import (
 	"bytes"
+	"flag"
+	"fmt"
 	"sync"
 )
 
@@ -16,6 +18,18 @@ const (
 	// Metrics will be added to a buffer until >= max size, at which point the
 	// buffer will be sent to the metrics system.
 	BUF_MAX_SIZE = 0x10000 // 64k
+)
+
+var BufPoolMaxSizeArg = flag.Int(
+	"buffer-pool-max-size",
+	DEFAULT_BUF_POOL_MAX_SIZE,
+	FormatFlagUsage(fmt.Sprintf(`
+	The application uses a general purpose recyclable bytes.Buffer pool with
+	2 main methods: GetBuffer and ReturnBuffer. GetBuffer will return new
+	buffers as needed, in an unbound fashion, whereas ReturnBuffer will
+	discard buffers after this limit is reached. Use %d to make it unbound
+	for return too.
+	`, BUF_POOL_MAX_SIZE_UNBOUND)),
 )
 
 type BufferPoolEntry struct {

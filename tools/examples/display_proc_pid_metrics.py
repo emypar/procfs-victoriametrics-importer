@@ -36,9 +36,16 @@ def print_proc_pid_metrics(
         pprint.pprint(s)
         pprint.pprint(s.to_json_compat())
         print()
-        for field, fn_is_cat in metrics_fn_map.items():
-            for fn in fn_is_cat:
-                print(f"{s.__class__.__name__}.{field}={getattr(s, field)}")
+        for field_spec, fn_require_history_list in metrics_fn_map.items():
+            for fn, require_history in fn_require_history_list:
+                if require_history:
+                    continue
+                if isinstance(field_spec, tuple):
+                    field, indx = field_spec
+                    print(f"{s.__class__.__name__}.{field}[{indx}]={getattr(s, field)[indx]}")
+                elif isinstance(field_spec, str):
+                    field = field_spec
+                    print(f"{s.__class__.__name__}.{field}={getattr(s, field)}")
                 metric_or_metrics = fn(s, common_labels)
                 pprint.pprint(metric_or_metrics)
                 if isinstance(metric_or_metrics, list):

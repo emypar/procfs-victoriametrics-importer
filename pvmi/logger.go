@@ -1,6 +1,7 @@
 package pvmi
 
 import (
+	"flag"
 	"fmt"
 	"os"
 	"path"
@@ -15,6 +16,20 @@ import (
 const (
 	DEFAULT_LOG_LEVEL           = logrus.InfoLevel
 	LOGGER_COMPONENT_FIELD_NAME = "comp"
+)
+
+var LoggerUseJsonArg = flag.Bool(
+	"log-json-format",
+	false,
+	"Enable log in JSON format.",
+)
+
+var LoggerLevelArg = flag.String(
+	"log-level",
+	DEFAULT_LOG_LEVEL.String(),
+	FormatFlagUsage(fmt.Sprintf(`
+	Set log level, it should be one of the %s values. 
+	`, GetLogLevelNames())),
 )
 
 // Maintain a cache for caller PC -> (file:line#, function) to speed up the formatting:
