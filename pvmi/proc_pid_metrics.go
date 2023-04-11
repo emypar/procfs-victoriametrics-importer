@@ -174,29 +174,6 @@ func NewPidMetricsContext(
 	return pidMetricsCtx, nil
 }
 
-func NewPidMetricsContextFromArgs(
-	interval time.Duration,
-	procfsRoot string,
-	pidListPart int,
-	fullMetricsFactor int,
-	activeThreshold uint,
-) (*PidMetricsContext, error) {
-	return NewPidMetricsContext(
-		interval,
-		procfsRoot,
-		pidListPart,
-		fullMetricsFactor,
-		activeThreshold,
-		// needed for testing:
-		"",  // hostname string,
-		"",  // source string,
-		0.,  // clktckSec float64,
-		nil, // timeNow TimeNowFn,
-		nil, // wChan chan *bytes.Buffer,
-		nil, // getPids GetPidsFn,
-		nil, // bufPool *BufferPool,
-	)
-}
 func (pidMetricsCtx *PidMetricsContext) ClearPidStarttimeCache() {
 	pidMetricsCtx.psc = PidStarttimeCache{}
 }
@@ -1234,15 +1211,4 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 	} else {
 		bufPool.ReturnBuffer(buf)
 	}
-}
-
-func GetPidMetricsGeneratorsCountFromArgs() int {
-	numPidMetricsGenerators := *NumPidMetricsGeneratorsArg
-	if numPidMetricsGenerators < 0 {
-		numPidMetricsGenerators = AvailableCpusCount
-		if numPidMetricsGenerators > MAX_NUM_PID_METRICS_GENERATORS {
-			numPidMetricsGenerators = MAX_NUM_PID_METRICS_GENERATORS
-		}
-	}
-	return numPidMetricsGenerators
 }

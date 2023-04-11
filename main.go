@@ -23,16 +23,18 @@ func main() {
 		return
 	}
 
-	MainLog.Info("Start PVMI")
-
-	err = pvmi.SetCommonMetricsLabelValuesFromArgs()
+	// Set and verify common metrics pre-requisites:
+	err = pvmi.SetCommonMetricsPreRequsitesFromArgs()
 	if err != nil {
 		MainLog.Fatal(err)
 		return
 	}
+
+	MainLog.Info("Start PVMI")
+
+	// Prepare the scheduler, compressor and sender framework:
 	pvmi.SetGlobalBufferPoolFromArgs()
 	pvmi.SetGlobalMetricsWriteChannelFromArgs()
-
 	if *pvmi.DummySenderArg != "" {
 		pvmi.StartDummySenderFromArgs(
 			pvmi.GlobalMetricsWriteChannel,
@@ -54,8 +56,14 @@ func main() {
 			return
 		}
 	}
-
 	pvmi.StartGlobalSchedulerFromArgs()
+
+	// Start the metrics collectors:
+	err = pvmi.StartPidMetricsFromArgs()
+	if err != nil {
+		MainLog.Fatal(err)
+		return
+	}
 
 	time.Sleep(34 * time.Hour)
 }

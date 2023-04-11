@@ -9,6 +9,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/prometheus/procfs"
 )
 
 const (
@@ -63,6 +65,7 @@ var MetricsWriteChanSizeArg = flag.Int(
 	)),
 )
 
+var GlobalProcfsRoot string
 var GlobalMetricsHostname string
 var GlobalMetricsSource string
 
@@ -85,12 +88,24 @@ func SetMetricsHostnameFromArgs() error {
 	return nil
 }
 
-func SetCommonMetricsLabelValuesFromArgs() error {
-	err := SetMetricsHostnameFromArgs()
+var commonMetricsLabelValuesSet = false
+
+func SetCommonMetricsPreRequsitesFromArgs() error {
+	if commonMetricsLabelValuesSet {
+		return nil
+	}
+	_, err := procfs.NewFS(*MetricsProcfsRootArg)
+	if err != nil {
+		return err
+	}
+	GlobalProcfsRoot = *MetricsProcfsRootArg
+
+	err = SetMetricsHostnameFromArgs()
 	if err != nil {
 		return err
 	}
 	GlobalMetricsSource = *MetricsSourceLabelValueArgs
+	commonMetricsLabelValuesSet = true
 	return nil
 }
 

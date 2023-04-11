@@ -77,6 +77,17 @@ var PidMetricsPidListValidIntervalArg = flag.Float64(
 	`),
 )
 
+func GetPidMetricsGeneratorsCountFromArgs() int {
+	numPidMetricsGenerators := *NumPidMetricsGeneratorsArg
+	if numPidMetricsGenerators < 0 {
+		numPidMetricsGenerators = AvailableCpusCount
+		if numPidMetricsGenerators > MAX_NUM_PID_METRICS_GENERATORS {
+			numPidMetricsGenerators = MAX_NUM_PID_METRICS_GENERATORS
+		}
+	}
+	return numPidMetricsGenerators
+}
+
 func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	if *PidMetricsScanIntervalArg <= 0 {
 		return nil, nil // i.e. disabled
@@ -84,7 +95,8 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	interval := time.Duration(*PidMetricsScanIntervalArg * float64(time.Second))
 
 	pidListFlags := uint32(0)
-	switch *PidMetricsPidTidSelectionArg {
+	pidTidSelection := *PidMetricsPidTidSelectionArg
+	switch pidTidSelection {
 	case "pid":
 		pidListFlags = PID_LIST_CACHE_PID_ENABLED_FLAG
 	case "tid":
@@ -94,7 +106,7 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	default:
 		return nil, fmt.Errorf(
 			"%s: invalid process/thread selection, not one of pid, tid or pid+tid",
-			*PidMetricsPidTidSelectionArg,
+			pidTidSelection,
 		)
 	}
 	pidListValidInterval := time.Duration(*PidMetricsPidListValidIntervalArg * float64(time.Second))
@@ -112,7 +124,7 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	GlobalPidListCache = NewPidListCache(
 		numGenerators,
 		pidListValidInterval,
-		*MetricsProcfsRootArg,
+		GlobalProcfsRoot,
 		pidListFlags,
 	)
 
@@ -122,14 +134,41 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	// %CPU = delta ticks * ClktckSec / scan interval * 100
 	activeThreshold := uint((*PidMetricsActiveThresholdPctArg / 100.) / ClktckSec)
 
+	// Ensure common metrics pre-requisites:
+	err := SetCommonMetricsPreRequsitesFromArgs()
+	if err != nil {
+		return nil, err
+	}
+
+	PidMetricsLog.Infof("pid_metrics: interval=%s", interval)
+	PidMetricsLog.Infof("pid_metrics: pidTidSelection=%s", pidTidSelection)
+	PidMetricsLog.Infof("pid_metrics: pidListValidInterval=%s", pidListValidInterval)
+	PidMetricsLog.Infof("pid_metrics: procfsRoot=%s", GlobalProcfsRoot)
+	PidMetricsLog.Infof("pid_metrics: fullMetricsFactor=%d", fullMetricsFactor)
+	PidMetricsLog.Infof("pid_metrics: activeThreshold=%d", activeThreshold)
+	PidMetricsLog.Infof("pid_metrics: hostname=%s", GlobalMetricsHostname)
+	PidMetricsLog.Infof("pid_metrics: source=%s", GlobalMetricsSource)
+	PidMetricsLog.Infof("pid_metrics: clktckSec=%f", ClktckSec)
+
+	PidMetricsLog.Infof("pid_metrics: numGenerators=%d", numGenerators)
+
 	pidMetricsContextList := make([]*PidMetricsContext, numGenerators)
 	for pidListPart := 0; pidListPart < numGenerators; pidListPart++ {
-		pidMetricsContext, err := NewPidMetricsContextFromArgs(
+		pidMetricsContext, err := NewPidMetricsContext(
 			interval,
-			*MetricsProcfsRootArg,
+			GlobalProcfsRoot,
 			pidListPart,
 			fullMetricsFactor,
 			activeThreshold,
+			// needed for testing:
+			GlobalMetricsHostname,
+			GlobalMetricsSource,
+			ClktckSec,
+			// will be set to default values:
+			nil, // timeNow TimeNowFn,
+			nil, // wChan chan *bytes.Buffer,
+			nil, // getPids GetPidsFn,
+			nil, // bufPool *BufferPool,
 		)
 		if err != nil {
 			return nil, err
@@ -137,4 +176,24 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 		pidMetricsContextList[pidListPart] = pidMetricsContext
 	}
 	return pidMetricsContextList, nil
+}
+
+var GlobalPidMetricsCtxList []*PidMetricsContext
+
+func StartPidMetricsFromArgs() error {
+	pidMetricsContextList, err := BuildPidMetricsCtxFromArgs()
+	if err != nil {
+		return err
+	}
+	if pidMetricsContextList == nil {
+		PidMetricsLog.Warn("PID metrics collection disabled")
+		return nil
+	}
+
+	GlobalPidMetricsCtxList = pidMetricsContextList
+	for _, pidMetricsCtx := range GlobalPidMetricsCtxList {
+		GlobalSchedulerContext.Add(GenerateAllPidMetrics, MetricsGenContext(pidMetricsCtx))
+	}
+
+	return nil
 }
