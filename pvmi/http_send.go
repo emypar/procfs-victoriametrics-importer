@@ -18,16 +18,6 @@ import (
 	"time"
 )
 
-const (
-	DEFAULT_HTTP_SEND_TCP_CONNECTION_TIMEOUT  = 2.
-	DEFAULT_HTTP_SEND_TCP_KEEP_ALIVE          = -1.
-	DEFAULT_HTTP_SEND_IDLE_CONNECTION_TIMEOUT = 30.
-	DEFAULT_HTTP_SEND_RESPONSE_HEADER_TIMEOUT = 10.
-	DEFAULT_HTTP_SEND_HEALTH_CHECK_PAUSE      = 2.
-	DEFAULT_HTTP_SEND_HEALTHY_IMPORT_MAX_WAIT = 10.
-	DEFAULT_HTTP_SEND_LOG_NTH_CHECK_FAILURE   = 15
-)
-
 var HttpSendLog = Log.WithField(
 	LOGGER_COMPONENT_FIELD_NAME,
 	"HttpSend",
@@ -72,16 +62,16 @@ type HttpSendConfig struct {
 	// Pause between consecutive health checks:
 	healthCheckPause time.Duration
 
-	// Maximum number of attempts when waiting for a healthy import endpoint:
-	getImportUrlMaxAttempts int
+	// How long to wait for a successful send, including retries and wait for a
+	// healthy URL:
+	sendMaxWait time.Duration
 
 	// How often to log the same health check error (i.e log only every Nth
 	// consecutive occurrence):
 	logNthCheckFailure int
 
-	// The timer creation function, used for testing. If nil then NewRealTimer
-	// is used:
-	newTimerFn NewMockableTimerFn
+	// Mocks during testing:
+	newCancelableTimerFn NewCancelableTimerFn
 }
 
 func BuildHttpSendConfigFromArgs() *HttpSendConfig {
@@ -108,8 +98,8 @@ func BuildHttpSendConfigFromArgs() *HttpSendConfig {
 		healthCheckPause: time.Duration(
 			*HttpSendHealthCheckPauseArg * float64(time.Second),
 		),
-		getImportUrlMaxAttempts: int(
-			*HttpSendHealthyImportMaxWaitArg / *HttpSendHealthCheckPauseArg + 0.9,
+		sendMaxWait: time.Duration(
+			*HttpSendMaxWaitArg * float64(time.Second),
 		),
 		logNthCheckFailure: *HttpSendLogNthCheckFailureArg,
 	}
@@ -134,8 +124,9 @@ type HttpSenderPool struct {
 	// Pause between consecutive health checks:
 	healthCheckPause time.Duration
 
-	// How many attempts to make when trying to get a healthy import URL:
-	getImportUrlMaxAttempts int
+	// How long to wait for a successful send, including retries and wait for a
+	// healthy URL:
+	sendMaxWait time.Duration
 
 	// How often to log the same health check error (i.e. log every Nth
 	// occurrence). Note that every state change is logged. If <= 1 then log
@@ -148,8 +139,8 @@ type HttpSenderPool struct {
 	poolCancelFn  context.CancelFunc
 	healthCheckWg *sync.WaitGroup
 
-	// The new timer creation function, can be a mock during testing:
-	newTimerFn NewMockableTimerFn
+	// Mocks during testing:
+	newCancelableTimerFn NewCancelableTimerFn
 }
 
 func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
@@ -180,23 +171,22 @@ func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 			},
 		)
 	}
-	newTimerFn := config.newTimerFn
-	if newTimerFn == nil {
-		newTimerFn = NewRealTimer
+	newCancelableTimerFn := config.newCancelableTimerFn
+	if newCancelableTimerFn == nil {
+		newCancelableTimerFn = NewCancelableTimer
 	}
 
 	poolCtx, poolCancelFn := context.WithCancel(context.Background())
-
 	pool := &HttpSenderPool{
-		HttpEndpoints:           eps,
-		httpClient:              httpClient,
-		healthCheckPause:        config.healthCheckPause,
-		getImportUrlMaxAttempts: config.getImportUrlMaxAttempts,
-		logNthCheckFailure:      config.logNthCheckFailure,
-		poolCtx:                 poolCtx,
-		poolCancelFn:            poolCancelFn,
-		healthCheckWg:           &sync.WaitGroup{},
-		newTimerFn:              newTimerFn,
+		HttpEndpoints:        eps,
+		httpClient:           httpClient,
+		healthCheckPause:     config.healthCheckPause,
+		sendMaxWait:          config.sendMaxWait,
+		logNthCheckFailure:   config.logNthCheckFailure,
+		poolCtx:              poolCtx,
+		poolCancelFn:         poolCancelFn,
+		healthCheckWg:        &sync.WaitGroup{},
+		newCancelableTimerFn: newCancelableTimerFn,
 	}
 
 	return pool, nil
@@ -251,22 +241,14 @@ func (pool *HttpSenderPool) DeclareImportUrlUnhealthy(importUrl string) error {
 }
 
 func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
-	importUrl, healthUrl := ep.importUrl, ep.healthUrl
-	healthCheckPause := pool.healthCheckPause
-	logNthCheckFailure := pool.logNthCheckFailure
-	poolCtx := pool.poolCtx
-	healthCheckWg := pool.healthCheckWg
-	httpClient := pool.httpClient
-	newTimerFn := pool.newTimerFn
+	importUrl, healthUrl, httpClient := ep.importUrl, ep.healthUrl, pool.httpClient
 
+	HttpSendLog.Infof("%s: Start health check using: %s", importUrl, healthUrl)
 	method := http.MethodGet
 	request, err := http.NewRequest(method, healthUrl, nil)
 	if err != nil {
 		return err
 	}
-
-	HttpSendLog.Infof("%s: Start health check using: %s", importUrl, healthUrl)
-	checkFailureN, logCheckFailure := 0, false
 	response, err := httpClient.Do(request)
 	if response != nil && response.Body != nil {
 		io.ReadAll(response.Body)
@@ -276,17 +258,19 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 		pool.MarkHttpEndpointHealthy(ep)
 		return nil
 	}
-	logCheckFailure = true
 
-	timer := newTimerFn(healthCheckPause, importUrl)
-	healthCheckWg.Add(1)
+	pool.healthCheckWg.Add(1)
 	go func() {
 		defer func() {
 			HttpSendLog.Infof("%s: Stop health check", importUrl)
-			healthCheckWg.Done()
+			pool.healthCheckWg.Done()
 		}()
-		for {
 
+		healthCheckPause := pool.healthCheckPause
+		logNthCheckFailure := pool.logNthCheckFailure
+		checkFailureN, logCheckFailure := 0, true
+		timer := pool.newCancelableTimerFn(pool.poolCtx, importUrl)
+		for nextHealthCheck := time.Now().Add(healthCheckPause); ; nextHealthCheck = time.Now().Add(healthCheckPause) {
 			if logCheckFailure {
 				if err != nil {
 					HttpSendLog.Warnf("%s unhealthy: %s", importUrl, err)
@@ -298,15 +282,10 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 
 			prevResponse, prevErr := response, err
 
-			select {
-			case <-poolCtx.Done():
-				if !timer.Stop() {
-					<-timer.GetChannel()
-				}
+			cancelled := timer.PauseUntil(nextHealthCheck)
+			if cancelled {
 				return
-			case <-timer.GetChannel():
 			}
-			timer.Reset(healthCheckPause)
 
 			response, err = httpClient.Do(request)
 			if response != nil && response.Body != nil {
@@ -338,7 +317,7 @@ func (pool *HttpSenderPool) Send(
 	bufPool *BufferPool,
 	contentEncoding string,
 ) error {
-	var timer MockableTimer // Will be set JIT
+	var timer CancelablePauseTimer // Will be set JIT
 
 	defer func() {
 		if bufPool != nil {
@@ -350,41 +329,22 @@ func (pool *HttpSenderPool) Send(
 	contentEncodingHeader := []string{contentEncoding}
 	contentLengthHeader := []string{strconv.Itoa(buf.Len())}
 	bufId := "" // Will be set JIT
-	// Make as many attempts as there are endpoints, since one can transition to
-	// unhealthy while being used:
-	numEndpoints := pool.NumEndpoints()
-	// Wait slightly > health check interval for an URL to become healthy:
-	waitHealthyPause := pool.healthCheckPause + 20*time.Millisecond
-	getImportUrlMaxAttempts := pool.getImportUrlMaxAttempts
 	body := bytes.NewReader(buf.Bytes())
-	poolCtx := pool.poolCtx
-	for n := 0; n < numEndpoints; n++ {
-		// Wait until a usable URL:
+	waitHealthyPause := pool.healthCheckPause + 20*time.Millisecond
+	maxWait := time.Now().Add(pool.sendMaxWait)
+	for time.Until(maxWait) >= 0 {
 		importUrl := pool.GetImportUrl(false)
-		for n := 0; importUrl == "" && n < getImportUrlMaxAttempts; n++ {
+		if importUrl == "" {
 			if bufId == "" {
 				HttpSendLog.Warnf("Waiting for a healthy import URL")
 				bufId = fmt.Sprintf("Send(buf=%p)", buf)
-				timer = pool.newTimerFn(waitHealthyPause, bufId)
-			} else {
-				timer.Reset(waitHealthyPause)
+				timer = pool.newCancelableTimerFn(pool.poolCtx, bufId)
 			}
-			select {
-			case <-poolCtx.Done():
-				if !timer.Stop() {
-					<-timer.GetChannel()
-				}
+			cancelled := timer.PauseUntil(time.Now().Add(waitHealthyPause))
+			if cancelled {
 				return fmt.Errorf("Send cancelled")
-			case <-timer.GetChannel():
 			}
-			importUrl = pool.GetImportUrl(false)
-		}
-		if importUrl == "" {
-			err := fmt.Errorf(
-				"could not get a healthy import URL after %d attempts, buffer discarded",
-				getImportUrlMaxAttempts,
-			)
-			return err
+			continue
 		}
 
 		// Build the request; if that fails then there is no point trying again:
@@ -407,7 +367,7 @@ func (pool *HttpSenderPool) Send(
 			io.ReadAll(response.Body)
 		}
 		if err == nil && response.StatusCode == http.StatusOK {
-			break
+			return nil
 		}
 
 		// Send failed, report the error and declare the endpoint as unhealthy:
@@ -421,7 +381,7 @@ func (pool *HttpSenderPool) Send(
 			return err
 		}
 	}
-	return nil
+	return fmt.Errorf("send failed after %s", pool.sendMaxWait)
 }
 
 func (config *HttpSendConfig) Log() {
@@ -433,6 +393,6 @@ func (config *HttpSendConfig) Log() {
 	HttpSendLog.Infof("HttpSendConfig: idleConnTimeout=%s", config.idleConnTimeout)
 	HttpSendLog.Infof("HttpSendConfig: responseHeaderTimeout=%s", config.responseHeaderTimeout)
 	HttpSendLog.Infof("HttpSendConfig: healthCheckPause=%s", config.healthCheckPause)
-	HttpSendLog.Infof("HttpSendConfig: getImportUrlMaxAttempts=%d", config.getImportUrlMaxAttempts)
+	HttpSendLog.Infof("HttpSendConfig: sendMaxWait=%s", config.sendMaxWait)
 	HttpSendLog.Infof("HttpSendConfig: logNthCheckFailure=%d", config.logNthCheckFailure)
 }

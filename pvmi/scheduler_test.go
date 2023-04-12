@@ -4,6 +4,7 @@ package pvmi
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -72,9 +73,10 @@ func todoToIdList(todo chan *MetricsWorkUnit) []string {
 
 func testScheduler(t *testing.T, tc *SchedulerTestCase, startSchedFirst bool) {
 
-	mockableTimers := testutils.NewMockTimePool()
-	newTimerFn := func(d time.Duration, id string) MockableTimer {
-		return MockableTimer(mockableTimers.NewMockTimer(d, id))
+	var timerMock *testutils.CancelableTimerMock
+	newCancelableTimerFn := func(parentCtx context.Context, id string) CancelablePauseTimer {
+		timerMock = testutils.NewCancelableTimerMock(parentCtx)
+		return CancelablePauseTimer(timerMock)
 	}
 	timeNow := time.UnixMilli(0)
 	timeNowFn := func() time.Time { return timeNow }
@@ -83,7 +85,7 @@ func testScheduler(t *testing.T, tc *SchedulerTestCase, startSchedFirst bool) {
 		start: make(chan bool, 1),
 		done:  make(chan bool, 1),
 	}
-	schedCtx := NewSchedulerContext(todo, false, newTimerFn, timeNowFn, cycleSync)
+	schedCtx := NewSchedulerContext(todo, false, newCancelableTimerFn, timeNowFn, cycleSync)
 
 	schedStarted := false
 	defer func() {
@@ -126,14 +128,8 @@ func testScheduler(t *testing.T, tc *SchedulerTestCase, startSchedFirst bool) {
 		// WU should be scheduled:
 		timeNow = (*schedCtx.timeHeap)[0]
 
-		// Start a scheduling cycle, it expects the timer to fire:
 		cycleSync.start <- true
-		err := mockableTimers.Fire(SCHEDULER_TIMER_ID, TEST_SCHEDULER_MAX_TIME_MOCK_WAIT)
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		// Sync wait on the scheduler cycle:
+		timerMock.Fire()
 		<-cycleSync.done
 
 		// The cycle results:
@@ -246,7 +242,7 @@ func TestSchedulerStopEmpty(y *testing.T) {
 	schedCtx.Stop()
 }
 
-func TestGlobalScheduler(y *testing.T) {
+func TestSchedulerGlobal(y *testing.T) {
 	StartGlobalSchedulerFromArgs()
 	GlobalSchedulerContext.Stop()
 }

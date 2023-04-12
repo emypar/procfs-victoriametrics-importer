@@ -7,6 +7,16 @@ import (
 	"fmt"
 )
 
+const (
+	DEFAULT_HTTP_SEND_TCP_CONNECTION_TIMEOUT  = 2.
+	DEFAULT_HTTP_SEND_TCP_KEEP_ALIVE          = -1.
+	DEFAULT_HTTP_SEND_IDLE_CONNECTION_TIMEOUT = 30.
+	DEFAULT_HTTP_SEND_RESPONSE_HEADER_TIMEOUT = 10.
+	DEFAULT_HTTP_SEND_HEALTH_CHECK_PAUSE      = 2.
+	DEFAULT_HTTP_SEND_MAX_WAIT                = 10.
+	DEFAULT_HTTP_SEND_LOG_NTH_CHECK_FAILURE   = 15
+)
+
 var HttpSendImportHttpEndpointsArg = flag.String(
 	"http-send-import-endpoints",
 	"",
@@ -74,10 +84,13 @@ var HttpSendHealthCheckPauseArg = flag.Float64(
 	`Pause between consecutive health checks, in seconds`,
 )
 
-var HttpSendHealthyImportMaxWaitArg = flag.Float64(
-	"http-send-healthy-import-max-wait",
-	DEFAULT_HTTP_SEND_HEALTHY_IMPORT_MAX_WAIT,
-	`How long to wait for a healthy import, in seconds`,
+var HttpSendMaxWaitArg = flag.Float64(
+	"http-send-max-wait",
+	DEFAULT_HTTP_SEND_MAX_WAIT,
+	FormatFlagUsage(`
+	How long to wait, in seconds, for a successful send, inclusive of retries
+	and wait for a healthy import URL.
+	`),
 )
 
 var HttpSendLogNthCheckFailureArg = flag.Int(
