@@ -15,11 +15,10 @@ import (
 )
 
 const (
-	HTTP_SEND_TEST_HTTP_CLIENT_MOCK_ANY = "*"
-	HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS  = 50 * time.Millisecond
-	HTTP_SEND_TEST_MAX_WAIT             = time.Second
-	HTTP_SEND_TEST_MAX_NUM_POLLS        = int(
-		HTTP_SEND_TEST_MAX_WAIT/HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS,
+	TEST_HTTP_SEND_PAUSE_BETWEEN_WAIT_HEALTHY_POLLS = 50 * time.Millisecond
+	TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT             = time.Second
+	TEST_HTTP_SEND_WAIT_HEALTHY_URL_MAX_NUM_POLLS   = int(
+		TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT/TEST_HTTP_SEND_PAUSE_BETWEEN_WAIT_HEALTHY_POLLS,
 	) + 1
 	TEST_HTTP_SEND_HEALTH_CHECK_PAUSE    = 2 * time.Second
 	TEST_HTTP_SEND_MAX_WAIT              = 10 * time.Second
@@ -35,7 +34,7 @@ var testHttpSendUrlSpecList = []string{
 
 func prepareHttpSenderPoolForTest(
 	urlSpecList string,
-	// The list on indexes in urlSpecList that should be started as healthy. If
+	// The list of indexes in urlSpecList that should be started as healthy. If
 	// it has only one element == -1 then start them all as healthy.
 	startHealthyIndexList []int,
 ) (
@@ -114,9 +113,9 @@ func prepareHttpSenderPoolForTest(
 	}
 
 	// Wait until all expected healthy import URLs appear in the healthy list:
-	for pollN := 0; len(expectedImportUrlSet) > 0 && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
+	for pollN := 0; len(expectedImportUrlSet) > 0 && pollN < TEST_HTTP_SEND_WAIT_HEALTHY_URL_MAX_NUM_POLLS; pollN++ {
 		if pollN > 0 {
-			time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
+			time.Sleep(TEST_HTTP_SEND_PAUSE_BETWEEN_WAIT_HEALTHY_POLLS)
 		}
 		for _, ep := range pool.GetHealthyEndpoints() {
 			delete(expectedImportUrlSet, ep.importUrl)
@@ -131,7 +130,7 @@ func prepareHttpSenderPoolForTest(
 		}
 		err = fmt.Errorf(
 			"the following importUrl are not healthy after %s: %v",
-			HTTP_SEND_TEST_MAX_WAIT,
+			TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT,
 			expectedHealthyUrlList,
 		)
 	}
@@ -240,15 +239,15 @@ func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHea
 			&http.Response{StatusCode: http.StatusOK},
 			nil,
 		)
-		err := cancelableTimerMocks.FireWithTimeout(pool.poolCtx, importUrl, HTTP_SEND_TEST_MAX_WAIT)
+		err := cancelableTimerMocks.FireWithTimeout(pool.poolCtx, importUrl, TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT)
 		if err != nil {
 			t.Fatal(err)
 		}
 
 		found := false
-		for pollN := 0; !found && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
+		for pollN := 0; !found && pollN < TEST_HTTP_SEND_WAIT_HEALTHY_URL_MAX_NUM_POLLS; pollN++ {
 			if pollN > 0 {
-				time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
+				time.Sleep(TEST_HTTP_SEND_PAUSE_BETWEEN_WAIT_HEALTHY_POLLS)
 			}
 			for _, ep := range pool.GetHealthyEndpoints() {
 				if ep.importUrl == importUrl {
@@ -258,7 +257,7 @@ func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHea
 			}
 		}
 		if !found {
-			t.Fatalf("%s not found healthy after %s", importUrl, HTTP_SEND_TEST_MAX_WAIT)
+			t.Fatalf("%s not found healthy after %s", importUrl, TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT)
 		}
 	}
 }
@@ -400,118 +399,112 @@ func TestHttpSendOK(t *testing.T) {
 	}
 }
 
-// func testHttpSendNoImportUrl(
-// 	t *testing.T,
-// 	urlSpecList string,
-// 	recoveryExpected bool,
-// ) {
-// 	pool, cancelableTimerMocks, timeNowMock, err := prepareHttpSenderPoolForTest(
-// 		urlSpecList, nil,
-// 	)
+func testHttpSendNoImportUrl(
+	t *testing.T,
+	urlSpecList string,
+	recoveryExpected bool,
+) {
+	pool, cancelableTimerMocks, timeNowMock, err := prepareHttpSenderPoolForTest(
+		urlSpecList, nil,
+	)
 
-// 	defer func() {
-// 		if pool != nil {
-// 			pool.Stop()
-// 		}
-// 	}()
+	defer func() {
+		if pool != nil {
+			pool.Stop()
+		}
+	}()
 
-// 	if err != nil {
-// 		t.Fatal(err)
-// 	}
+	if err != nil {
+		t.Fatal(err)
+	}
 
-// 	buf := &bytes.Buffer{}
-// 	buf.WriteString("Test no import list")
-// 	bufId := fmt.Sprintf("Send(buf=%p)", buf)
-// 	go func() {
-// 		timeNow := time.Unix(0, 0)
-// 		timeNowFn := func() time.Time {
+	buf := &bytes.Buffer{}
+	buf.WriteString("Test no import list")
+	bufId := fmt.Sprintf("Send(buf=%p)", buf)
+	go func() {
+		// Fire the timer keeping Send paused till next poll for a healthy URL:
+		err := cancelableTimerMocks.FireWithTimeout(pool.poolCtx, bufId, TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT)
+		if err != nil {
+			t.Log(err)
+			return
+		}
+		// For the next attempt, either prepare a healthy URL (if recoveryExpected) or set time past the max wait:
+		if recoveryExpected {
+			for _, ep := range pool.importUrlMap {
+				importUrl, healthUrl := ep.importUrl, ep.healthUrl
+				httpClientDoerMock := pool.httpClient.(*testutils.HttpClientDoerMock)
+				response := &http.Response{StatusCode: http.StatusOK}
+				httpClientDoerMock.SetGetResponse(healthUrl, response, nil)
+				httpClientDoerMock.SetPutResponse(importUrl, response, nil)
+				err := cancelableTimerMocks.FireWithTimeout(pool.poolCtx, importUrl, TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT)
+				if err != nil {
+					t.Log(err)
+					return
+				}
+				found := false
+				for pollN := 0; !found && pollN < TEST_HTTP_SEND_WAIT_HEALTHY_URL_MAX_NUM_POLLS; pollN++ {
+					if pollN > 0 {
+						time.Sleep(TEST_HTTP_SEND_PAUSE_BETWEEN_WAIT_HEALTHY_POLLS)
+					}
+					for _, ep := range pool.GetHealthyEndpoints() {
+						if ep.importUrl == importUrl {
+							found = true
+							break
+						}
+					}
+				}
+				if !found {
+					t.Logf("%s not found healthy after %s", importUrl, TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT)
+					return
+				}
+				break
+			}
+		} else {
+			timeNowMock.Set(timeNowMock.Now().Add(2 * pool.sendMaxWait))
+		}
+		err = cancelableTimerMocks.FireWithTimeout(pool.poolCtx, bufId, TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT)
+		if err != nil {
+			t.Log(err)
+			return
+		}
+	}()
+	// Invoke send w/ a deadline:
+	sendRet := make(chan error, 1)
+	ctx, ctxCancelFn := context.WithTimeout(context.Background(), TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT)
+	go func() {
+		err := pool.Send(buf, nil, "")
+		if err != nil {
+			t.Log(err)
+		}
+		sendRet <- err
+	}()
+	select {
+	case <-ctx.Done():
+		t.Fatalf("Send timeout, it didn't complete after %s", TEST_HTTP_SEND_HEALTHY_URL_MAX_WAIT)
+	case err = <-sendRet:
+	}
+	ctxCancelFn()
+	if recoveryExpected {
+		if err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err == nil {
+			t.Fatal("Unexpected Send success when no import URLs were available")
+		}
+	}
 
-// 		}
-// 		failedAttempts := pool.getImportUrlMaxAttempts
-// 		if recoveryExpected {
-// 			failedAttempts /= 2
-// 		}
-// 		for i := 0; i < failedAttempts; i++ {
-// 			err := cancelableTimerMocks.Fire(bufId, HTTP_SEND_TEST_MAX_WAIT)
-// 			if err != nil {
-// 				t.Log(err)
-// 				return
-// 			}
-// 		}
-// 		if recoveryExpected {
-// 			for _, ep := range pool.importUrlMap {
-// 				importUrl, healthUrl := ep.importUrl, ep.healthUrl
-// 				httpClientDoerMock := pool.httpClient.(*testutils.HttpClientDoerMock)
-// 				response := &http.Response{StatusCode: http.StatusOK}
-// 				httpClientDoerMock.SetGetResponse(healthUrl, response, nil)
-// 				httpClientDoerMock.SetPutResponse(importUrl, response, nil)
-// 				err := cancelableTimerMocks.Fire(importUrl, HTTP_SEND_TEST_MAX_WAIT)
-// 				if err != nil {
-// 					t.Log(err)
-// 					return
-// 				}
-// 				found := false
-// 				for pollN := 0; !found && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
-// 					if pollN > 0 {
-// 						time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
-// 					}
-// 					for _, ep := range pool.GetHealthyEndpoints() {
-// 						if ep.importUrl == importUrl {
-// 							found = true
-// 							break
-// 						}
-// 					}
-// 				}
-// 				if !found {
-// 					t.Logf("%s not found healthy after %s", importUrl, HTTP_SEND_TEST_MAX_WAIT)
-// 					return
-// 				}
-// 				err = cancelableTimerMocks.Fire(bufId, HTTP_SEND_TEST_MAX_WAIT)
-// 				if err != nil {
-// 					t.Log(err)
-// 					return
-// 				}
-// 				break
-// 			}
-// 		}
-// 	}()
-// 	// Invoke send w/ a deadline:
-// 	sendRet := make(chan error, 1)
-// 	ctx, ctxCancelFn := context.WithTimeout(context.Background(), HTTP_SEND_TEST_MAX_WAIT)
-// 	go func() {
-// 		err := pool.Send(buf, nil, "")
-// 		if err != nil {
-// 			t.Log(err)
-// 		}
-// 		sendRet <- err
-// 	}()
-// 	select {
-// 	case <-ctx.Done():
-// 		t.Fatalf("Send timeout, it didn't complete after %s", HTTP_SEND_TEST_MAX_WAIT)
-// 	case err = <-sendRet:
-// 	}
-// 	ctxCancelFn()
-// 	if recoveryExpected {
-// 		if err != nil {
-// 			t.Fatal(err)
-// 		}
-// 	} else {
-// 		if err == nil {
-// 			t.Fatal("Unexpected Send success when no import URLs were available")
-// 		}
-// 	}
+}
 
-// }
-
-// func TestHttpSendNoImportUrl(t *testing.T) {
-// 	for _, urlSpecList := range testHttpSendUrlSpecList {
-// 		for _, recoveryExpected := range []bool{false, true} {
-// 			t.Run(
-// 				fmt.Sprintf("urlSpecList=%s,recoveryExpected=%v", urlSpecList, recoveryExpected),
-// 				func(t *testing.T) {
-// 					testHttpSendNoImportUrl(t, urlSpecList, recoveryExpected)
-// 				},
-// 			)
-// 		}
-// 	}
-// }
+func TestHttpSendNoImportUrl(t *testing.T) {
+	for _, urlSpecList := range testHttpSendUrlSpecList {
+		for _, recoveryExpected := range []bool{false, true} {
+			t.Run(
+				fmt.Sprintf("urlSpecList=%s,recoveryExpected=%v", urlSpecList, recoveryExpected),
+				func(t *testing.T) {
+					testHttpSendNoImportUrl(t, urlSpecList, recoveryExpected)
+				},
+			)
+		}
+	}
+}

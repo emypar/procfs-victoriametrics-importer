@@ -16,10 +16,6 @@ import (
 	"github.com/eparparita/procfs-victoriametrics-importer/testutils"
 )
 
-const (
-	TEST_SCHEDULER_MAX_TIME_MOCK_WAIT = time.Second
-)
-
 type SchedulerTestMGenCtx struct {
 	interval time.Duration
 	id       string
