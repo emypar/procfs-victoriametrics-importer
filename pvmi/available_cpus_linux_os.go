@@ -26,5 +26,8 @@ func CountAvailableCPUs() int {
 			cpuMask &= (cpuMask - 1)
 		}
 	}
+	if count > runtime.NumCPU() {
+		count = runtime.NumCPU()
+	}
 	return count
 }
