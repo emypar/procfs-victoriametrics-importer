@@ -181,17 +181,6 @@ func (m *CancelableTimerMock) PauseUntil(deadline time.Time) (cancelled bool) {
 	m.pausing = true
 	m.cond.Broadcast()
 	m.cond.L.Unlock()
-
-	pause := time.Until(deadline)
-	if pause <= 0 {
-		// No timer required, simply check for cancel and return right away:
-		select {
-		case <-m.ctx.Done():
-			cancelled = true
-		default:
-		}
-		return
-	}
 	select {
 	case <-m.ctx.Done():
 		cancelled = true
@@ -297,4 +286,20 @@ func (p *CancelableTimerMockPool) FireWithTimeout(
 	}
 	p.m.Unlock()
 	return timer.FireWithTimeout(timeout)
+}
+
+type TimeNowMock struct {
+	now time.Time
+}
+
+func NewTimeNowMock() *TimeNowMock {
+	return &TimeNowMock{time.Unix(0, 0)}
+}
+
+func (m *TimeNowMock) Set(t time.Time) {
+	m.now = t
+}
+
+func (m *TimeNowMock) Now() time.Time {
+	return m.now
 }

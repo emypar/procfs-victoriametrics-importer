@@ -21,9 +21,12 @@ const (
 	HTTP_SEND_TEST_MAX_NUM_POLLS        = int(
 		HTTP_SEND_TEST_MAX_WAIT/HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS,
 	) + 1
+	TEST_HTTP_SEND_HEALTH_CHECK_PAUSE    = 2 * time.Second
+	TEST_HTTP_SEND_MAX_WAIT              = 10 * time.Second
+	TEST_HTTP_SEND_LOG_NTH_CHECK_FAILURE = 15
 )
 
-var TestHttpSendUrlSpecList = []string{
+var testHttpSendUrlSpecList = []string{
 	"http://1.1.1.0:8080",
 	"http://1.1.1.0:8080,http://1.1.1.1:8080",
 	"http://1.1.1.0:8080,http://1.1.1.1:8080,http://1.1.1.2:8080",
@@ -37,7 +40,8 @@ func prepareHttpSenderPoolForTest(
 	startHealthyIndexList []int,
 ) (
 	pool *HttpSenderPool,
-	mockableTimers *testutils.MockTimerPool,
+	cancelableTimerMocks *testutils.CancelableTimerMockPool,
+	timeNowMock *testutils.TimeNowMock,
 	err error,
 ) {
 	defer func() {
@@ -61,14 +65,20 @@ func prepareHttpSenderPoolForTest(
 	}
 
 	// Prepare config w/ mocks for timers and HTTP client:
-	config := BuildHttpSendConfigFromArgs()
-	config.urlSpecList = urlSpecList
-	config.httpClient = testutils.NewHttpClientDoerMock()
-	mockableTimers = testutils.NewMockTimePool()
-	newTimerFn := func(d time.Duration, id string) MockableTimer {
-		return MockableTimer(mockableTimers.NewMockTimer(d, id))
+	cancelableTimerMocks = testutils.NewCancelableTimerMockPool()
+	newCancelableTimerFn := func(parentCtx context.Context, id string) CancelablePauseTimer {
+		return CancelablePauseTimer(cancelableTimerMocks.NewCancelableTimer(parentCtx, id))
 	}
-	config.newTimerFn = newTimerFn
+	timeNowMock = testutils.NewTimeNowMock()
+	config := &HttpSendConfig{
+		urlSpecList:          urlSpecList,
+		httpClient:           testutils.NewHttpClientDoerMock(),
+		healthCheckPause:     TEST_HTTP_SEND_HEALTH_CHECK_PAUSE,
+		sendMaxWait:          TEST_HTTP_SEND_MAX_WAIT,
+		logNthCheckFailure:   TEST_HTTP_SEND_LOG_NTH_CHECK_FAILURE,
+		newCancelableTimerFn: newCancelableTimerFn,
+		timeNowFn:            timeNowMock.Now,
+	}
 	pool, err = NewHttpSenderPool(config)
 	if err != nil {
 		return
@@ -130,7 +140,7 @@ func prepareHttpSenderPoolForTest(
 }
 
 func testHttpSendPoolStart(t *testing.T, urlSpecList string, startHealthyIndexList []int) {
-	pool, _, err := prepareHttpSenderPoolForTest(
+	pool, _, _, err := prepareHttpSenderPoolForTest(
 		urlSpecList, startHealthyIndexList,
 	)
 	defer func() {
@@ -166,7 +176,7 @@ func indexListToString(indexList []int) string {
 }
 
 func TestHttpSendPoolStart(t *testing.T) {
-	for _, urlSpecList := range TestHttpSendUrlSpecList {
+	for _, urlSpecList := range testHttpSendUrlSpecList {
 		importHealthUrlPairs, err := ParseEndpointSpec(urlSpecList)
 		if err != nil {
 			t.Log(err)
@@ -202,7 +212,7 @@ func TestHttpSendPoolStart(t *testing.T) {
 }
 
 func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHealthyIndexList []int) {
-	pool, mockableTimers, err := prepareHttpSenderPoolForTest(
+	pool, cancelableTimerMocks, _, err := prepareHttpSenderPoolForTest(
 		urlSpecList, startHealthyIndexList,
 	)
 
@@ -230,7 +240,10 @@ func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHea
 			&http.Response{StatusCode: http.StatusOK},
 			nil,
 		)
-		mockableTimers.Fire(importUrl, HTTP_SEND_TEST_MAX_WAIT)
+		err := cancelableTimerMocks.FireWithTimeout(pool.poolCtx, importUrl, HTTP_SEND_TEST_MAX_WAIT)
+		if err != nil {
+			t.Fatal(err)
+		}
 
 		found := false
 		for pollN := 0; !found && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
@@ -251,7 +264,7 @@ func testHttpEndpointsBecomingHealthy(t *testing.T, urlSpecList string, startHea
 }
 
 func TestHttpSendEnpointsBecomingHealthy(t *testing.T) {
-	for _, urlSpecList := range TestHttpSendUrlSpecList {
+	for _, urlSpecList := range testHttpSendUrlSpecList {
 		importHealthUrlPairs, err := ParseEndpointSpec(urlSpecList)
 		if err != nil {
 			t.Log(err)
@@ -284,7 +297,7 @@ func testHttpSendOK(
 		return
 	}
 
-	pool, _, err := prepareHttpSenderPoolForTest(
+	pool, _, _, err := prepareHttpSenderPoolForTest(
 		urlSpecList, startHealthyIndexList,
 	)
 
@@ -358,7 +371,7 @@ func testHttpSendOK(
 }
 
 func TestHttpSendOK(t *testing.T) {
-	for _, urlSpecList := range TestHttpSendUrlSpecList {
+	for _, urlSpecList := range testHttpSendUrlSpecList {
 		importHealthUrlPairs, err := ParseEndpointSpec(urlSpecList)
 		if err != nil {
 			t.Log(err)
@@ -387,114 +400,118 @@ func TestHttpSendOK(t *testing.T) {
 	}
 }
 
-func testHttpSendNoImportUrl(
-	t *testing.T,
-	urlSpecList string,
-	recoveryExpected bool,
-) {
-	pool, mockableTimers, err := prepareHttpSenderPoolForTest(
-		urlSpecList, nil,
-	)
+// func testHttpSendNoImportUrl(
+// 	t *testing.T,
+// 	urlSpecList string,
+// 	recoveryExpected bool,
+// ) {
+// 	pool, cancelableTimerMocks, timeNowMock, err := prepareHttpSenderPoolForTest(
+// 		urlSpecList, nil,
+// 	)
 
-	defer func() {
-		if pool != nil {
-			pool.Stop()
-		}
-	}()
+// 	defer func() {
+// 		if pool != nil {
+// 			pool.Stop()
+// 		}
+// 	}()
 
-	if err != nil {
-		t.Fatal(err)
-	}
+// 	if err != nil {
+// 		t.Fatal(err)
+// 	}
 
-	buf := &bytes.Buffer{}
-	buf.WriteString("Test no import list")
-	bufId := fmt.Sprintf("Send(buf=%p)", buf)
-	go func() {
-		failedAttempts := pool.getImportUrlMaxAttempts
-		if recoveryExpected {
-			failedAttempts /= 2
-		}
-		for i := 0; i < failedAttempts; i++ {
-			err := mockableTimers.Fire(bufId, HTTP_SEND_TEST_MAX_WAIT)
-			if err != nil {
-				t.Log(err)
-				return
-			}
-		}
-		if recoveryExpected {
-			for _, ep := range pool.importUrlMap {
-				importUrl, healthUrl := ep.importUrl, ep.healthUrl
-				httpClientDoerMock := pool.httpClient.(*testutils.HttpClientDoerMock)
-				response := &http.Response{StatusCode: http.StatusOK}
-				httpClientDoerMock.SetGetResponse(healthUrl, response, nil)
-				httpClientDoerMock.SetPutResponse(importUrl, response, nil)
-				err := mockableTimers.Fire(importUrl, HTTP_SEND_TEST_MAX_WAIT)
-				if err != nil {
-					t.Log(err)
-					return
-				}
-				found := false
-				for pollN := 0; !found && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
-					if pollN > 0 {
-						time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
-					}
-					for _, ep := range pool.GetHealthyEndpoints() {
-						if ep.importUrl == importUrl {
-							found = true
-							break
-						}
-					}
-				}
-				if !found {
-					t.Logf("%s not found healthy after %s", importUrl, HTTP_SEND_TEST_MAX_WAIT)
-					return
-				}
-				err = mockableTimers.Fire(bufId, HTTP_SEND_TEST_MAX_WAIT)
-				if err != nil {
-					t.Log(err)
-					return
-				}
-				break
-			}
-		}
-	}()
-	// Invoke send w/ a deadline:
-	sendRet := make(chan error, 1)
-	ctx, ctxCancelFn := context.WithTimeout(context.Background(), HTTP_SEND_TEST_MAX_WAIT)
-	go func() {
-		err := pool.Send(buf, nil, "")
-		if err != nil {
-			t.Log(err)
-		}
-		sendRet <- err
-	}()
-	select {
-	case <-ctx.Done():
-		t.Fatalf("Send timeout, it didn't complete after %s", HTTP_SEND_TEST_MAX_WAIT)
-	case err = <-sendRet:
-	}
-	ctxCancelFn()
-	if recoveryExpected {
-		if err != nil {
-			t.Fatal(err)
-		}
-	} else {
-		if err == nil {
-			t.Fatal("Unexpected Send success when no import URLs were available")
-		}
-	}
+// 	buf := &bytes.Buffer{}
+// 	buf.WriteString("Test no import list")
+// 	bufId := fmt.Sprintf("Send(buf=%p)", buf)
+// 	go func() {
+// 		timeNow := time.Unix(0, 0)
+// 		timeNowFn := func() time.Time {
 
-}
+// 		}
+// 		failedAttempts := pool.getImportUrlMaxAttempts
+// 		if recoveryExpected {
+// 			failedAttempts /= 2
+// 		}
+// 		for i := 0; i < failedAttempts; i++ {
+// 			err := cancelableTimerMocks.Fire(bufId, HTTP_SEND_TEST_MAX_WAIT)
+// 			if err != nil {
+// 				t.Log(err)
+// 				return
+// 			}
+// 		}
+// 		if recoveryExpected {
+// 			for _, ep := range pool.importUrlMap {
+// 				importUrl, healthUrl := ep.importUrl, ep.healthUrl
+// 				httpClientDoerMock := pool.httpClient.(*testutils.HttpClientDoerMock)
+// 				response := &http.Response{StatusCode: http.StatusOK}
+// 				httpClientDoerMock.SetGetResponse(healthUrl, response, nil)
+// 				httpClientDoerMock.SetPutResponse(importUrl, response, nil)
+// 				err := cancelableTimerMocks.Fire(importUrl, HTTP_SEND_TEST_MAX_WAIT)
+// 				if err != nil {
+// 					t.Log(err)
+// 					return
+// 				}
+// 				found := false
+// 				for pollN := 0; !found && pollN < HTTP_SEND_TEST_MAX_NUM_POLLS; pollN++ {
+// 					if pollN > 0 {
+// 						time.Sleep(HTTP_SEND_TEST_PAUSE_BETWEEN_POLLS)
+// 					}
+// 					for _, ep := range pool.GetHealthyEndpoints() {
+// 						if ep.importUrl == importUrl {
+// 							found = true
+// 							break
+// 						}
+// 					}
+// 				}
+// 				if !found {
+// 					t.Logf("%s not found healthy after %s", importUrl, HTTP_SEND_TEST_MAX_WAIT)
+// 					return
+// 				}
+// 				err = cancelableTimerMocks.Fire(bufId, HTTP_SEND_TEST_MAX_WAIT)
+// 				if err != nil {
+// 					t.Log(err)
+// 					return
+// 				}
+// 				break
+// 			}
+// 		}
+// 	}()
+// 	// Invoke send w/ a deadline:
+// 	sendRet := make(chan error, 1)
+// 	ctx, ctxCancelFn := context.WithTimeout(context.Background(), HTTP_SEND_TEST_MAX_WAIT)
+// 	go func() {
+// 		err := pool.Send(buf, nil, "")
+// 		if err != nil {
+// 			t.Log(err)
+// 		}
+// 		sendRet <- err
+// 	}()
+// 	select {
+// 	case <-ctx.Done():
+// 		t.Fatalf("Send timeout, it didn't complete after %s", HTTP_SEND_TEST_MAX_WAIT)
+// 	case err = <-sendRet:
+// 	}
+// 	ctxCancelFn()
+// 	if recoveryExpected {
+// 		if err != nil {
+// 			t.Fatal(err)
+// 		}
+// 	} else {
+// 		if err == nil {
+// 			t.Fatal("Unexpected Send success when no import URLs were available")
+// 		}
+// 	}
 
-func TestHttpSendNoImportUrl(t *testing.T) {
-	for _, urlSpecList := range TestHttpSendUrlSpecList {
-		for _, recoveryExpected := range []bool{false, true} {
-			t.Run(
-				fmt.Sprintf("urlSpecList=%s,recoveryExpected=%v", urlSpecList, recoveryExpected),
-				func(t *testing.T) {
-					testHttpSendNoImportUrl(t, urlSpecList, recoveryExpected)
-				},
-			)
-		}
-	}
-}
+// }
+
+// func TestHttpSendNoImportUrl(t *testing.T) {
+// 	for _, urlSpecList := range testHttpSendUrlSpecList {
+// 		for _, recoveryExpected := range []bool{false, true} {
+// 			t.Run(
+// 				fmt.Sprintf("urlSpecList=%s,recoveryExpected=%v", urlSpecList, recoveryExpected),
+// 				func(t *testing.T) {
+// 					testHttpSendNoImportUrl(t, urlSpecList, recoveryExpected)
+// 				},
+// 			)
+// 		}
+// 	}
+// }

@@ -72,6 +72,7 @@ type HttpSendConfig struct {
 
 	// Mocks during testing:
 	newCancelableTimerFn NewCancelableTimerFn
+	timeNowFn            TimeNowFn
 }
 
 func BuildHttpSendConfigFromArgs() *HttpSendConfig {
@@ -115,32 +116,17 @@ type HttpClientDoer interface {
 
 // The sender pool:
 type HttpSenderPool struct {
+	// Ingest the config:
+	HttpSendConfig
+
 	// Endpoints:
 	*HttpEndpoints
-
-	// HTTP client, can be a mock during testing:
-	httpClient HttpClientDoer
-
-	// Pause between consecutive health checks:
-	healthCheckPause time.Duration
-
-	// How long to wait for a successful send, including retries and wait for a
-	// healthy URL:
-	sendMaxWait time.Duration
-
-	// How often to log the same health check error (i.e. log every Nth
-	// occurrence). Note that every state change is logged. If <= 1 then log
-	// every failure.
-	logNthCheckFailure int
 
 	// The logistics for stopping running health check goroutines, needed during
 	// testing:
 	poolCtx       context.Context
 	poolCancelFn  context.CancelFunc
 	healthCheckWg *sync.WaitGroup
-
-	// Mocks during testing:
-	newCancelableTimerFn NewCancelableTimerFn
 }
 
 func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
@@ -151,9 +137,17 @@ func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 	if err != nil {
 		return nil, err
 	}
-	httpClient := config.httpClient
-	if httpClient == nil {
-		httpClient = HttpClientDoer(
+
+	poolCtx, poolCancelFn := context.WithCancel(context.Background())
+	pool := &HttpSenderPool{
+		HttpSendConfig: *config,
+		HttpEndpoints:  eps,
+		poolCtx:        poolCtx,
+		poolCancelFn:   poolCancelFn,
+		healthCheckWg:  &sync.WaitGroup{},
+	}
+	if pool.httpClient == nil {
+		pool.httpClient = HttpClientDoer(
 			&http.Client{
 				Transport: &http.Transport{
 					DialContext: (&net.Dialer{
@@ -171,24 +165,12 @@ func NewHttpSenderPool(config *HttpSendConfig) (*HttpSenderPool, error) {
 			},
 		)
 	}
-	newCancelableTimerFn := config.newCancelableTimerFn
-	if newCancelableTimerFn == nil {
-		newCancelableTimerFn = NewCancelableTimer
+	if pool.newCancelableTimerFn == nil {
+		pool.newCancelableTimerFn = NewCancelableTimer
 	}
-
-	poolCtx, poolCancelFn := context.WithCancel(context.Background())
-	pool := &HttpSenderPool{
-		HttpEndpoints:        eps,
-		httpClient:           httpClient,
-		healthCheckPause:     config.healthCheckPause,
-		sendMaxWait:          config.sendMaxWait,
-		logNthCheckFailure:   config.logNthCheckFailure,
-		poolCtx:              poolCtx,
-		poolCancelFn:         poolCancelFn,
-		healthCheckWg:        &sync.WaitGroup{},
-		newCancelableTimerFn: newCancelableTimerFn,
+	if pool.timeNowFn == nil {
+		pool.timeNowFn = time.Now
 	}
-
 	return pool, nil
 }
 
@@ -270,7 +252,8 @@ func (pool *HttpSenderPool) StartHealthCheck(ep *HttpEndpoint) error {
 		logNthCheckFailure := pool.logNthCheckFailure
 		checkFailureN, logCheckFailure := 0, true
 		timer := pool.newCancelableTimerFn(pool.poolCtx, importUrl)
-		for nextHealthCheck := time.Now().Add(healthCheckPause); ; nextHealthCheck = time.Now().Add(healthCheckPause) {
+		timeNowFn := pool.timeNowFn
+		for nextHealthCheck := timeNowFn().Add(healthCheckPause); ; nextHealthCheck = timeNowFn().Add(healthCheckPause) {
 			if logCheckFailure {
 				if err != nil {
 					HttpSendLog.Warnf("%s unhealthy: %s", importUrl, err)
@@ -331,8 +314,9 @@ func (pool *HttpSenderPool) Send(
 	bufId := "" // Will be set JIT
 	body := bytes.NewReader(buf.Bytes())
 	waitHealthyPause := pool.healthCheckPause + 20*time.Millisecond
-	maxWait := time.Now().Add(pool.sendMaxWait)
-	for time.Until(maxWait) >= 0 {
+	timeNowFn := pool.timeNowFn
+	waitUntil := timeNowFn().Add(pool.sendMaxWait)
+	for waitUntil.Sub(timeNowFn()) >= 0 {
 		importUrl := pool.GetImportUrl(false)
 		if importUrl == "" {
 			if bufId == "" {
@@ -340,7 +324,7 @@ func (pool *HttpSenderPool) Send(
 				bufId = fmt.Sprintf("Send(buf=%p)", buf)
 				timer = pool.newCancelableTimerFn(pool.poolCtx, bufId)
 			}
-			cancelled := timer.PauseUntil(time.Now().Add(waitHealthyPause))
+			cancelled := timer.PauseUntil(timeNowFn().Add(waitHealthyPause))
 			if cancelled {
 				return fmt.Errorf("Send cancelled")
 			}

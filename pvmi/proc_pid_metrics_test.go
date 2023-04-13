@@ -48,19 +48,19 @@ type PidMetricsTestCaseGroup map[PidMetricsTestCaseGroupKey][]PidMetricsTestCase
 // makes one call to time.Now() Additionally GenerateAllPidMetrics makes a first
 // call to time.Now(), before invoking GeneratePidMetrics and it should receive
 // min(test case timestamp).
-type TimeNowMock struct {
+type PidMetricsTestTimeNowMock struct {
 	prometheusTs []int64
 	i            int
 	keepMin      bool
 }
 
-func (tm *TimeNowMock) timeNow() time.Time {
+func (tm *PidMetricsTestTimeNowMock) timeNow() time.Time {
 	t := time.UnixMilli(tm.prometheusTs[tm.i])
 	tm.i += 1
 	return t
 }
 
-func (tm *TimeNowMock) addTs(ts int64) {
+func (tm *PidMetricsTestTimeNowMock) addTs(ts int64) {
 	if tm.prometheusTs == nil {
 		tm.prometheusTs = make([]int64, 0)
 		tm.i = 0
@@ -133,7 +133,7 @@ func clonePmce(pmce *PidMetricsCacheEntry) *PidMetricsCacheEntry {
 func addPidMetricsTestCase(
 	pmtc *PidMetricsTestCase,
 	pmc PidMetricsCache,
-	tm *TimeNowMock,
+	tm *PidMetricsTestTimeNowMock,
 	pidList *[]PidTidPair,
 ) {
 	if pmtc.WantPmce != nil {
@@ -155,7 +155,7 @@ func runPidMetricsTestCase(
 	pmtc PidMetricsTestCase,
 	pmc PidMetricsCache,
 	psc PidStarttimeCache,
-	tm *TimeNowMock,
+	tm *PidMetricsTestTimeNowMock,
 
 ) {
 	fs, err := procfs.NewFS(pmtc.ProcfsRoot)
@@ -218,7 +218,7 @@ func runPidMetricsTestCases(
 		t.Fatal(err)
 	}
 
-	tm := &TimeNowMock{keepMin: false}
+	tm := &PidMetricsTestTimeNowMock{keepMin: false}
 	for _, pmtc := range pmtcList {
 		pmc := PidMetricsCache{}
 		addPidMetricsTestCase(&pmtc, pmc, tm, nil)
@@ -281,7 +281,7 @@ func runAllPidMetricsTestCases(
 	}
 	fullMetricsFactor, activeThreshold := pmtcList[0].FullMetricsFactor, pmtcList[0].ActiveThreshold
 
-	tm := &TimeNowMock{keepMin: true}
+	tm := &PidMetricsTestTimeNowMock{keepMin: true}
 	pmc := PidMetricsCache{}
 	psc := PidStarttimeCache{}
 
