@@ -16,7 +16,7 @@ from .common import ProcfsStructFieldSpec, ProcfsStructVal
 from .proc_cgroup import ProcPidCgroups, load_proc_pid_cgroups
 from .proc_cmdline import ProcPidCmdline, load_proc_pid_cmdline
 from .proc_io import ProcIO, load_proc_pid_io
-from .proc_stat import ProcStat, load_proc_pid_stat, make_common_labels
+from .proc_stat import ProcStat, load_proc_pid_stat
 from .proc_status import ProcStatus, load_proc_pid_status
 
 ProcfsStructType = Union[

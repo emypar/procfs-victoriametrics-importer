@@ -18,7 +18,7 @@ from metrics_common_test import TestdataProcfsRoot
 def print_proc_pid_metrics(
     pid: int, tid: int = 0, procfs_root: str = TestdataProcfsRoot
 ):
-    common_labels = procfs.make_common_labels(pid, tid=tid)
+    common_labels = pvmi.proc_pid_stat_metrics.make_common_labels(pid, tid=tid)
     procCgroups = procfs.load_proc_pid_cgroups(pid, tid=tid)
     procCmdline = procfs.load_proc_pid_cmdline(pid, tid=tid)
     procIO = procfs.load_proc_pid_io(pid, tid=tid)
@@ -42,7 +42,9 @@ def print_proc_pid_metrics(
                     continue
                 if isinstance(field_spec, tuple):
                     field, indx = field_spec
-                    print(f"{s.__class__.__name__}.{field}[{indx}]={getattr(s, field)[indx]}")
+                    print(
+                        f"{s.__class__.__name__}.{field}[{indx}]={getattr(s, field)[indx]}"
+                    )
                 elif isinstance(field_spec, str):
                     field = field_spec
                     print(f"{s.__class__.__name__}.{field}={getattr(s, field)}")

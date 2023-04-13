@@ -2,13 +2,45 @@
 
 # support for pvmi/proc_pid_metrics.go testing
 
+import functools
 from typing import List, Optional
 
 import procfs
-from metrics_common_test import TestClktckSec
+from metrics_common_test import (
+    TestClktckSec,
+    TestdataProcfsRoot,
+    TestHostname,
+    TestSource,
+)
 from tools_common import sanitize_label_value
 
 from .common import Metric, register_metrics_fn
+
+
+@functools.lru_cache(maxsize=None)
+def make_common_labels(
+    pid: int,
+    tid: int = 0,
+    procfs_root: str = TestdataProcfsRoot,
+    hostname: str = TestHostname,
+    source: str = TestSource,
+) -> str:
+    starttime = procfs.load_proc_pid_stat(
+        pid, tid=tid, procfs_root=procfs_root
+    ).Starttime
+    if tid == 0:
+        return f'''hostname="{hostname}",source="{source}",pid="{pid}",starttime="{starttime}"'''
+    else:
+        t_starttime = starttime
+        if pid != tid:
+            starttime = procfs.load_proc_pid_stat(
+                pid, tid=0, procfs_root=procfs_root
+            ).Starttime
+        return (
+            f'''hostname="{hostname}",source="{source}",pid="{pid}",starttime="{starttime}"'''
+            f''',tid="{tid}",t_starttime="{t_starttime}"'''
+        )
+
 
 metrics_fn_map = {}
 

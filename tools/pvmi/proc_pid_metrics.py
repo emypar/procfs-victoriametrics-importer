@@ -75,7 +75,9 @@ def load_pmce(
     procIo = procfs.load_proc_pid_io(pid, tid=tid, procfs_root=procfs_root)
     procCgroups = procfs.load_proc_pid_cgroups(pid, tid=tid, procfs_root=procfs_root)
     procCmdline = procfs.load_proc_pid_cmdline(pid, tid=tid, procfs_root=procfs_root)
-    common_labels = procfs.make_common_labels(pid, tid=tid, procfs_root=procfs_root)
+    common_labels = proc_pid_stat_metrics.make_common_labels(
+        pid, tid=tid, procfs_root=procfs_root
+    )
     ts = max(procStat._ts, procStatus._ts, procIo._ts, procCgroups._ts, procCmdline._ts)
     pmce = PidMetricsCacheEntry(
         ProcStat=procStat,
