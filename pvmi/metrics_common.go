@@ -20,9 +20,9 @@ const (
 	DEFAULT_PROCFS_ROOT = "/proc"
 
 	// All metrics will have the following labels:
-	HOSTNAME_LABEL_NAME        = "hostname"
-	SOURCE_LABEL_NAME          = "source"
-	DEFAULT_SOURCE_LABEL_VALUE = "pvmi"
+	HOSTNAME_LABEL_NAME     = "hostname"
+	JOB_LABEL_NAME          = "job"
+	DEFAULT_JOB_LABEL_VALUE = "pvmi"
 )
 
 var MetricsProcfsRootArg = flag.String(
@@ -45,12 +45,12 @@ var UseShortHostnameArg = flag.Bool(
 	`Strip the domain from OS's hostname.`,
 )
 
-var MetricsSourceLabelValueArgs = flag.String(
-	"metrics-source",
-	DEFAULT_SOURCE_LABEL_VALUE,
+var MetricsJobLabelValueArgs = flag.String(
+	"metrics-job",
+	DEFAULT_JOB_LABEL_VALUE,
 	FormatFlagUsage(fmt.Sprintf(`
 	Set the value to use for %s label, common to all metrics.
-	`, SOURCE_LABEL_NAME)),
+	`, JOB_LABEL_NAME)),
 )
 
 var MetricsWriteChanSizeArg = flag.Int(
@@ -67,7 +67,7 @@ var MetricsWriteChanSizeArg = flag.Int(
 
 var GlobalProcfsRoot string
 var GlobalMetricsHostname string
-var GlobalMetricsSource string
+var GlobalMetricsJob string
 
 func SetMetricsHostnameFromArgs() error {
 	if *HostnameArg != "" {
@@ -104,7 +104,7 @@ func SetCommonMetricsPreRequsitesFromArgs() error {
 	if err != nil {
 		return err
 	}
-	GlobalMetricsSource = *MetricsSourceLabelValueArgs
+	GlobalMetricsJob = *MetricsJobLabelValueArgs
 	commonMetricsLabelValuesSet = true
 	return nil
 }

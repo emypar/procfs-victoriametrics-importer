@@ -1,6 +1,6 @@
 #! /bin/bash
 
-# Apply source code formatting tools:
+# Apply job code formatting tools:
 
 case "$0" in
     /*|*/*) this_dir=$(cd $(dirname $0) && pwd);;

@@ -49,7 +49,7 @@ var PidMetricsLog = Log.WithField(
 
 var pidMetricCommonLabelsFmt = fmt.Sprintf(
 	`%s="%%s",%s="%%s",%s="%%d",%s="%%d"`,
-	HOSTNAME_LABEL_NAME, SOURCE_LABEL_NAME, PROC_PID_METRIC_PID_LABEL_NAME, PROC_PID_METRIC_STARTTIME_LABEL_NAME,
+	HOSTNAME_LABEL_NAME, JOB_LABEL_NAME, PROC_PID_METRIC_PID_LABEL_NAME, PROC_PID_METRIC_STARTTIME_LABEL_NAME,
 )
 var tidMetricCommonLabelsFmt = pidMetricCommonLabelsFmt + "," + fmt.Sprintf(
 	`%s="%%d",%s="%%d"`,
@@ -102,7 +102,7 @@ type PidMetricsContext struct {
 	pmStats *PidMetricsStats
 	// The following are useful for testing, in lieu of mocks:
 	hostname  string
-	source    string
+	job       string
 	clktckSec float64
 	timeNow   TimeNowFn
 	getPids   func(int) []PidTidPair
@@ -121,7 +121,7 @@ func NewPidMetricsContext(
 	activeThreshold uint,
 	// needed for testing:
 	hostname string,
-	source string,
+	job string,
 	clktckSec float64,
 	timeNow TimeNowFn,
 	wChan chan *bytes.Buffer,
@@ -131,8 +131,8 @@ func NewPidMetricsContext(
 	if hostname == "" {
 		hostname = GlobalMetricsHostname
 	}
-	if source == "" {
-		source = GlobalMetricsSource
+	if job == "" {
+		job = GlobalMetricsJob
 	}
 	if clktckSec <= 0 {
 		clktckSec = ClktckSec
@@ -165,7 +165,7 @@ func NewPidMetricsContext(
 		passNum:           0,
 		wChan:             wChan,
 		hostname:          hostname,
-		source:            source,
+		job:               job,
 		clktckSec:         clktckSec,
 		timeNow:           timeNow,
 		getPids:           getPids,
@@ -440,7 +440,7 @@ func GeneratePidMetrics(
 			pmce.CommonLabels = fmt.Sprintf(
 				pidMetricCommonLabelsFmt,
 				pidMetricsCtx.hostname,
-				pidMetricsCtx.source,
+				pidMetricsCtx.job,
 				procStat.PID,
 				procStat.Starttime,
 			)
@@ -452,7 +452,7 @@ func GeneratePidMetrics(
 			pmce.CommonLabels = fmt.Sprintf(
 				tidMetricCommonLabelsFmt,
 				pidMetricsCtx.hostname,
-				pidMetricsCtx.source,
+				pidMetricsCtx.job,
 				pid,
 				starttime,
 				procStat.PID,

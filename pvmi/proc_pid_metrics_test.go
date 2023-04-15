@@ -175,7 +175,7 @@ func runPidMetricsTestCase(
 		fullMetricsFactor: pmtc.FullMetricsFactor,
 		activeThreshold:   pmtc.ActiveThreshold,
 		hostname:          TestHostname,
-		source:            TestSource,
+		job:               TestJob,
 		clktckSec:         TestClktckSec,
 		timeNow:           tm.timeNow,
 	}
@@ -318,7 +318,7 @@ func runAllPidMetricsTestCases(
 			passNum:           passNum,
 			fullMetricsFactor: fullMetricsFactor,
 			hostname:          TestHostname,
-			source:            TestSource,
+			job:               TestJob,
 			clktckSec:         TestClktckSec,
 			timeNow:           tm.timeNow,
 			getPids:           getPids,

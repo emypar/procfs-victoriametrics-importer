@@ -147,7 +147,7 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	PidMetricsLog.Infof("pid_metrics: fullMetricsFactor=%d", fullMetricsFactor)
 	PidMetricsLog.Infof("pid_metrics: activeThreshold=%d", activeThreshold)
 	PidMetricsLog.Infof("pid_metrics: hostname=%s", GlobalMetricsHostname)
-	PidMetricsLog.Infof("pid_metrics: source=%s", GlobalMetricsSource)
+	PidMetricsLog.Infof("pid_metrics: job=%s", GlobalMetricsJob)
 	PidMetricsLog.Infof("pid_metrics: clktckSec=%f", ClktckSec)
 
 	PidMetricsLog.Infof("pid_metrics: numGenerators=%d", numGenerators)
@@ -162,7 +162,7 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 			activeThreshold,
 			// needed for testing:
 			GlobalMetricsHostname,
-			GlobalMetricsSource,
+			GlobalMetricsJob,
 			ClktckSec,
 			// will be set to default values:
 			nil, // timeNow TimeNowFn,
