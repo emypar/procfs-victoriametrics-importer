@@ -350,7 +350,7 @@ func (pool *HttpSenderPool) Send(
 		if response != nil && response.Body != nil {
 			io.ReadAll(response.Body)
 		}
-		if err == nil && response.StatusCode == http.StatusOK {
+		if err == nil && response.StatusCode == http.StatusOK || response.StatusCode == http.StatusNoContent {
 			return nil
 		}
 
