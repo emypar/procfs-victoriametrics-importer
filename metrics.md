@@ -16,7 +16,8 @@ All metrics will have the following labels:
 
 | Label | Default Value | Command Arg |
 | ----- | ------------- | ----------- |
-| `hostname`| os hostname | `--hostname` |
+| `hostname`| os hostname | `--metrics-hostname`<br>`-metrics-use-short-hostname` |
+| `job` | `pvmi` | `-metrics-job` |
 
 
 ## Handling proc_pid_\* Metrics
