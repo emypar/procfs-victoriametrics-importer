@@ -99,7 +99,7 @@ func (t *CancelableTimer) PauseUntil(deadline time.Time) (cancelled bool) {
 	for pause > 0 {
 		if !firstPass {
 			TimeUtilsLog.Warnf(
-				"Timer fired prematurely: initialPause=%s, (left) pause=%s",
+				"Timer fired prematurely: initialPause=%s, remaining pause=%s",
 				initialPause,
 				pause,
 			)

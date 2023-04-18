@@ -16,6 +16,15 @@
 // The scheduler writes units of work (metricsGenFn, metricsGenCtx) into a TODO
 // queue, which is read by worker goroutines. The latter invoke
 // metricsGenFn(metricsGenCtx) to generate the actual metrics.
+//
+// How metrics generators are added to the schedulers:
+// - each generator will have a StartXXXFromArgs() function, responsible for
+// creating the generator context based on command line args and for adding it to
+// the scheduler.
+// - the above is added to a global list of such functions, via init(), one per
+// generator, see RegisterStartGeneratorFromArgs() from cmdline_args.go
+// - main() will then iterate thru the list above and invoke StartXXXFromArgs()
+// one be one.
 
 package pvmi
 

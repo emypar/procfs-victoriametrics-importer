@@ -43,3 +43,11 @@ func FormatFlagUsageWidth(usage string, width int) string {
 func FormatFlagUsage(usage string) string {
 	return FormatFlagUsageWidth(usage, DEFAULT_USAGE_WIDTH)
 }
+
+type StartGeneratorFromArgsFn func() error
+
+var GlobalStartGeneratorFromArgsList []StartGeneratorFromArgsFn
+
+func RegisterStartGeneratorFromArgs(fn StartGeneratorFromArgsFn) {
+	GlobalStartGeneratorFromArgsList = append(GlobalStartGeneratorFromArgsList, fn)
+}

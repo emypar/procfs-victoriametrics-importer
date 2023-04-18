@@ -4,7 +4,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"time"
 
 	"github.com/eparparita/procfs-victoriametrics-importer/pvmi"
 )
@@ -58,12 +57,14 @@ func main() {
 	}
 	pvmi.StartGlobalSchedulerFromArgs()
 
-	// Start the metrics collectors:
-	err = pvmi.StartPidMetricsFromArgs()
-	if err != nil {
-		MainLog.Fatal(err)
-		return
+	// Start the metrics generators:
+	for _, startMetricsGeneratorFromArgsFn := range pvmi.GlobalStartGeneratorFromArgsList {
+		err = startMetricsGeneratorFromArgsFn()
+		if err != nil {
+			MainLog.Fatal(err)
+			return
+		}
 	}
 
-	time.Sleep(34 * time.Hour)
+	select {}
 }

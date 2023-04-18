@@ -9,13 +9,13 @@ import (
 )
 
 const (
-	DEFAULT_PID_METRICS_NUM_GENERATORS          = -1    // i.e. use available CPU count.
-	MAX_NUM_PID_METRICS_GENERATORS              = 4     // ceiling when based on CPU count
-	DEFAULT_PID_METRICS_SCAN_INTERVAL           = 1.    // seconds
-	DEFAULT_PID_METRICS_FULL_METRICS_INTERVAL   = 15.   // seconds
-	DEFAULT_PID_METRICS_ACTIVE_THRESHOLD_PCT    = 1.    // %CPU
-	DEFAULT_PID_METRICS_PID_TID_SELECTION       = "tid" // "pid"|"tid"|"pid+tid"
-	DEFAULT_PID_METRICS_PID_LIST_VALID_INTERVAL = -1.   // i.e. use 1/2 * scan interval
+	DEFAULT_PID_METRICS_NUM_GENERATORS          = -1        // i.e. use available CPU count.
+	MAX_NUM_PID_METRICS_GENERATORS              = 4         // ceiling when based on CPU count
+	DEFAULT_PID_METRICS_SCAN_INTERVAL           = 1.        // seconds
+	DEFAULT_PID_METRICS_FULL_METRICS_INTERVAL   = 15.       // seconds
+	DEFAULT_PID_METRICS_ACTIVE_THRESHOLD_PCT    = 1.        // %CPU
+	DEFAULT_PID_METRICS_PID_TID_SELECTION       = "pid+tid" // "pid"|"tid"|"pid+tid"
+	DEFAULT_PID_METRICS_PID_LIST_VALID_INTERVAL = -1.       // i.e. use 1/2 * scan interval
 
 )
 
@@ -192,8 +192,17 @@ func StartPidMetricsFromArgs() error {
 
 	GlobalPidMetricsCtxList = pidMetricsContextList
 	for _, pidMetricsCtx := range GlobalPidMetricsCtxList {
+		PidMetricsLog.Infof(
+			"Start PID metrics generator: interval=%s, partition=%d",
+			pidMetricsCtx.interval,
+			pidMetricsCtx.pidListPart,
+		)
 		GlobalSchedulerContext.Add(GenerateAllPidMetrics, MetricsGenContext(pidMetricsCtx))
 	}
 
 	return nil
+}
+
+func init() {
+	RegisterStartGeneratorFromArgs(StartPidMetricsFromArgs)
 }
