@@ -32,6 +32,30 @@ var LoggerLevelArg = flag.String(
 	`, GetLogLevelNames())),
 )
 
+var GlobalSourceRoot string
+
+func GetSourceRoot() (string, error) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		return "", fmt.Errorf("cannot determine source root: runtime.Caller(0) failed")
+	}
+	return path.Dir(path.Dir(file)), nil
+}
+
+func init() {
+	root, err := GetSourceRoot()
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+	} else {
+
+	}
+	if root != "/" {
+		GlobalSourceRoot = root + "/"
+	} else {
+		GlobalSourceRoot = root
+	}
+}
+
 // Maintain a cache for caller PC -> (file:line#, function) to speed up the formatting:
 type LogFunctionFilePair struct {
 	function string
@@ -48,7 +72,12 @@ func (c *LogFunctionFileCache) LogCallerPrettyfier(f *runtime.Frame) (function s
 	defer c.m.Unlock()
 	fnFile := c.fnFileCache[f.PC]
 	if fnFile == nil {
-		_, filename := path.Split(f.File)
+		filename := ""
+		if GlobalSourceRoot != "" && strings.HasPrefix(f.File, GlobalSourceRoot) {
+			filename = f.File[len(GlobalSourceRoot):]
+		} else {
+			_, filename = path.Split(f.File)
+		}
 		// function := f.Function
 		// i := strings.LastIndex(function, "/")
 		// if i >= 0 {
