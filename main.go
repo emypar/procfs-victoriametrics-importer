@@ -23,7 +23,7 @@ func main() {
 	}
 
 	// Set and verify common metrics pre-requisites:
-	err = pvmi.SetCommonMetricsPreRequsitesFromArgs()
+	err = pvmi.SetCommonMetricsPreRequisitesFromArgs()
 	if err != nil {
 		MainLog.Fatal(err)
 		return

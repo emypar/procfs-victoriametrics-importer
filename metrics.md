@@ -68,7 +68,7 @@ Reference: [man cgroups](https://man7.org/linux/man-pages/man7/cgroups.7.html), 
 
 | Metric | Labels | Value | Obs |
 | ------ | ------ | ----- | --- |
-| proc_pid_cgroup | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>hierarchy_id=_id_<br>controller=_controller_<br> path=_path_ | 0/1 | pseudo-categorical |
+| proc_pid_cgroup | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>hierarchy_id=_id_<br>controller=_controller_<br> path=_path_ | 0/1 | pseudo-categorical |
 
 
 
@@ -79,7 +79,7 @@ Source: `/proc/PID/cmdline` or `/proc/PID/task/TID/cmdline`
 
 | Metric | Labels | Value | Obs |
 | ------ | ------ | ----- | --- |
-| proc_pid_cmdline | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>cmdline=_cmdline_ | 0/1 | The command line string, with `\0` (null) replaced by `' '` (space).<br>pseudo-categorical |
+| proc_pid_cmdline | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>cmdline=_cmdline_ | 0/1 | The command line string, with `\0` (null) replaced by `' '` (space).<br>pseudo-categorical |
 
 
 ### proc_pid_io_\*
@@ -90,13 +90,13 @@ Parser: [proc_io.go](https://github.com/prometheus/procfs/blob/master/proc_io.go
 
 | Metric | Labels | Value | Obs |
 | ------ | ------ | ----- | --- |
-| proc_pid_io_rcar | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_io_wcar | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_io_syscr | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_io_syscw | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_io_readbytes | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_io_writebytes | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_io_cancelled_writebytes | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_io_rcar | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_io_wcar | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_io_syscr | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_io_syscw | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_io_readbytes | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_io_writebytes | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_io_cancelled_writebytes | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
 
 ### proc_pid_stat_\*
 
@@ -107,23 +107,23 @@ Parser: [proc_stat.go](https://github.com/prometheus/procfs/blob/master/proc_sta
 
 | Metric | Labels | Value | Obs |
 | ------ | ------ | ----- | --- |
-| proc_pid_stat_state | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>state=`R\|S\|D\|...` | 0/1 | pseudo-categorical |
-| proc_pid_stat_info | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>comm=_comm_<br>ppid=_ppid_<br>pgrp=_pgrp_<br>session=_session_<br>tty_nr=*tty_nr*<br>tpgid=_tpgid_<br>flags=*pf_flags*<br>priority=_priority_<br>nice=_nice_<br>rt_priority=*rt_priority*<br>policy=_policy_ | 0/1 | Information associated w/ a process/thread that may change but it is unlikely to do so for the lifespan of a process<br><br>pseudo-categorical |
-| proc_pid_stat_minflt | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_stat_cminflt | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_stat_majflt | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_stat_cmajflt | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_stat_utime_seconds | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | The value read from file divided by `sysconf(_SC_CLK_TCK)` |
-| proc_pid_stat_stime_seconds | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | The value read from file divided by `sysconf(_SC_CLK_TCK)` |
-| proc_pid_stat_cutime_seconds | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | The value read from file divided by `sysconf(_SC_CLK_TCK)` |
-| proc_pid_stat_cstime_seconds | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | The value read from file divided by `sysconf(_SC_CLK_TCK)` |
-| proc_pid_stat_utime_pct | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | The %CPU in user space |
-| proc_pid_stat_stime_pct | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | The %CPU in system space  |
-| proc_pid_stat_cpu_time_pct | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | The %CPU in user+system space  |
-| proc_pid_stat_vsize | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_stat_rss | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_stat_rsslim | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_stat_cpu | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_stat_state | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>state=`R\|S\|D\|...` | 0/1 | pseudo-categorical |
+| proc_pid_stat_info | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>comm=_comm_<br>ppid=_ppid_<br>pgrp=_pgrp_<br>session=_session_<br>tty_nr=*tty_nr*<br>tpgid=_tpgid_<br>flags=*pf_flags*<br>priority=_priority_<br>nice=_nice_<br>rt_priority=*rt_priority*<br>policy=_policy_ | 0/1 | Information associated w/ a process/thread that may change but it is unlikely to do so for the lifespan of a process<br><br>pseudo-categorical |
+| proc_pid_stat_minflt | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_stat_cminflt | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_stat_majflt | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_stat_cmajflt | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_stat_utime_seconds | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | The value read from file divided by `sysconf(_SC_CLK_TCK)` |
+| proc_pid_stat_stime_seconds | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | The value read from file divided by `sysconf(_SC_CLK_TCK)` |
+| proc_pid_stat_cutime_seconds | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | The value read from file divided by `sysconf(_SC_CLK_TCK)` |
+| proc_pid_stat_cstime_seconds | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | The value read from file divided by `sysconf(_SC_CLK_TCK)` |
+| proc_pid_stat_utime_pct | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | The %CPU in user space |
+| proc_pid_stat_stime_pct | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | The %CPU in system space  |
+| proc_pid_stat_cpu_time_pct | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | The %CPU in user+system space  |
+| proc_pid_stat_vsize | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_stat_rss | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_stat_rsslim | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_stat_cpu | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
 
 
 ### proc_pid_status_\*
@@ -135,25 +135,61 @@ Parser: [proc_status.go](https://github.com/prometheus/procfs/blob/master/proc_s
 
 | Metric | Labels | Value | Obs |
 | ------ | ------ | ----- | --- |
-| proc_pid_status_info | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>name=_name_<br>tgid=_tgid_<br>real_uid=_uid_<br>effective_uid=_uid_<br>saved_uid=_uid_<br>filesystem_uid=_uid_<br>real_gid=_gid_<br>effective_gid=_gid_<br>saved_gid=_gid_<br>filesystem_gid=_gid_ | 0/1 | Information associated w/ a process/thread that may change but it is unlikely to do so for the lifespan of a process<br><br>pseudo-categorical |
-| proc_pid_status_vm_peak | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_size | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_lck | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_pin | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_hwm | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_rss | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_rss_anon | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_rss_file | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_rss_shmem | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_data | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_stk | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_exe | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_lib | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_pte | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_pmd | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_swap | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_hugetbl_pages | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_voluntary_ctxt_switches | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
-| proc_pid_status_nonvoluntary_ctxt_switches | hostname=_hostname_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_status_info | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>name=_name_<br>tgid=_tgid_<br>real_uid=_uid_<br>effective_uid=_uid_<br>saved_uid=_uid_<br>filesystem_uid=_uid_<br>real_gid=_gid_<br>effective_gid=_gid_<br>saved_gid=_gid_<br>filesystem_gid=_gid_ | 0/1 | Information associated w/ a process/thread that may change but it is unlikely to do so for the lifespan of a process<br><br>pseudo-categorical |
+| proc_pid_status_vm_peak | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_size | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_lck | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_pin | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_hwm | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_rss | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_rss_anon | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_rss_file | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_rss_shmem | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_data | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_stk | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_exe | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_lib | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_pte | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_pmd | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_swap | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_hugetbl_pages | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_voluntary_ctxt_switches | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
+| proc_pid_status_nonvoluntary_ctxt_switches | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
 
 **TODO**: add support for `cpuset` amd `memset` to the parser.
+
+### proc_stat_\*
+
+Source: `/proc/stat`
+
+Parser: [stat.go](https://github.com/prometheus/procfs/blob/master/stat.go)
+
+| Metric | Labels | Value | Obs |
+| ------ | ------ | ----- | --- |
+| proc_stat_cpu_user_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_nice_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_system_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_idle_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_iowait_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_irq_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_softirq_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_steal_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_guest_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_guest_nice_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_user_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_nice_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_system_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_idle_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_iowait_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_irq_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_softirq_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_steal_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_guest_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_guest_nice_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_boot_time | hostname=_hostname_<br>job=_job_<br> | |
+| proc_stat_irq_total_count | hostname=_hostname_<br>job=_job_<br> | Counter | |
+| proc_stat_softirq_total_count | hostname=_hostname_<br>job=_job_<br> | Counter | |
+| proc_stat_context_switches_count | hostname=_hostname_<br>job=_job_<br> | Counter | |
+| proc_stat_process_created_count | hostname=_hostname_<br>job=_job_<br> | Counter | |
+| proc_stat_process_running_count | hostname=_hostname_<br>job=_job_<br> | Gauge | |
+| proc_stat_process_blocked_count | hostname=_hostname_<br>job=_job_<br> | Gauge | |

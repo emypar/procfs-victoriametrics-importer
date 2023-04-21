@@ -135,7 +135,7 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	activeThreshold := uint((*PidMetricsActiveThresholdPctArg / 100.) / ClktckSec)
 
 	// Ensure common metrics pre-requisites:
-	err := SetCommonMetricsPreRequsitesFromArgs()
+	err := SetCommonMetricsPreRequisitesFromArgs()
 	if err != nil {
 		return nil, err
 	}

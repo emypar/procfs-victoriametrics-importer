@@ -90,7 +90,7 @@ func SetMetricsHostnameFromArgs() error {
 
 var commonMetricsLabelValuesSet = false
 
-func SetCommonMetricsPreRequsitesFromArgs() error {
+func SetCommonMetricsPreRequisitesFromArgs() error {
 	if commonMetricsLabelValuesSet {
 		return nil
 	}

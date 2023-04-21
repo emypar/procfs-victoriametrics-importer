@@ -4,6 +4,9 @@ import "github.com/tklauser/go-sysconf"
 
 const (
 	FALLBACK_CLKTCK = 100
+	// procfs module uses a predefined constant userHZ which may need a
+	// correction factor if the runtime SC_CLK_TCK is different:
+	PROCFS_USER_HZ = 100
 )
 
 var ClktckSec float64
