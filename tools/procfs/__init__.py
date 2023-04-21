@@ -18,6 +18,7 @@ from .proc_cmdline import ProcPidCmdline, load_proc_pid_cmdline
 from .proc_io import ProcIO, load_proc_pid_io
 from .proc_stat import ProcStat, load_proc_pid_stat
 from .proc_status import ProcStatus, load_proc_pid_status
+from .stat import Stat, load_stat
 
 ProcfsStructType = Union[
     ProcStat,
@@ -25,4 +26,5 @@ ProcfsStructType = Union[
     ProcIO,
     ProcPidCgroups,
     ProcPidCmdline,
+    Stat,
 ]

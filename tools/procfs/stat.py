@@ -16,7 +16,7 @@ from tools_common import ts_to_prometheus_ts
 from .common import ProcfsStructBase, proc_pid_dir
 
 @dataclasses.dataclass
-class CPUStat:
+class CPUStat(ProcfsStructBase):
     User: float = 0.
     Nice: float = 0.
     System: float = 0.
@@ -52,7 +52,7 @@ class CPUStat:
         self.GuestNice = float(guest_nice) * TestClktckSec
 
 @dataclasses.dataclass
-class SoftIRQStat:
+class SoftIRQStat(ProcfsStructBase):
     Hi: int = 0
     Timer: int = 0
     NetTx: int = 0

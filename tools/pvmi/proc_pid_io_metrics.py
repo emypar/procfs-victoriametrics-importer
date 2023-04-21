@@ -11,7 +11,7 @@ from .common import Metric, register_metrics_fn
 metrics_fn_map = {}
 
 
-@register_metrics_fn(metrics_fn_map, "RChar")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_io_rcar_metric(
     procIO: procfs.ProcIO,
     common_labels: str = "",
@@ -24,7 +24,7 @@ def proc_pid_io_rcar_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "WChar")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_io_wcar_metric(
     procIO: procfs.ProcIO,
     common_labels: str = "",
@@ -37,7 +37,7 @@ def proc_pid_io_wcar_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "SyscR")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_io_syscr_metric(
     procIO: procfs.ProcIO,
     common_labels: str = "",
@@ -50,7 +50,7 @@ def proc_pid_io_syscr_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "SyscW")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_io_syscw_metric(
     procIO: procfs.ProcIO,
     common_labels: str = "",
@@ -63,7 +63,7 @@ def proc_pid_io_syscw_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "ReadBytes")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_io_readbytes_metric(
     procIO: procfs.ProcIO,
     common_labels: str = "",
@@ -76,7 +76,7 @@ def proc_pid_io_readbytes_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "WriteBytes")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_io_writebytes_metric(
     procIO: procfs.ProcIO,
     common_labels: str = "",
@@ -89,7 +89,7 @@ def proc_pid_io_writebytes_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "CancelledWriteBytes")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_io_cancelled_writebytes_metric(
     procIO: procfs.ProcIO,
     common_labels: str = "",

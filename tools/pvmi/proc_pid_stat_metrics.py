@@ -45,7 +45,7 @@ def make_common_labels(
 metrics_fn_map = {}
 
 
-@register_metrics_fn(metrics_fn_map, "State")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_state_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -67,22 +67,7 @@ def proc_pid_stat_state_metric(
     )
 
 
-@register_metrics_fn(
-    metrics_fn_map,
-    [
-        "Comm",
-        "PPID",
-        "PGRP",
-        "Session",
-        "TTY",
-        "TPGID",
-        "Flags",
-        "Priority",
-        "Nice",
-        "RTPriority",
-        "Policy",
-    ],
-)
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_info_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -114,7 +99,7 @@ def proc_pid_stat_info_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "MinFlt")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_minflt_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -127,7 +112,7 @@ def proc_pid_stat_minflt_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "CMinFlt")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_cminflt_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -140,7 +125,7 @@ def proc_pid_stat_cminflt_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "MajFlt")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_majflt_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -153,7 +138,7 @@ def proc_pid_stat_majflt_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "CMajFlt")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_cmajflt_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -166,7 +151,7 @@ def proc_pid_stat_cmajflt_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "UTime")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_utime_seconds_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -180,7 +165,7 @@ def proc_pid_stat_utime_seconds_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "STime")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_stime_seconds_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -194,7 +179,7 @@ def proc_pid_stat_stime_seconds_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "CUTime")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_cutime_seconds_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -208,7 +193,7 @@ def proc_pid_stat_cutime_seconds_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "CSTime")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_cstime_seconds_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -222,7 +207,7 @@ def proc_pid_stat_cstime_seconds_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VSize")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_vsize_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -235,7 +220,7 @@ def proc_pid_stat_vsize_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "RSS")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_rss_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -248,7 +233,7 @@ def proc_pid_stat_rss_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "RSSLimit")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_rsslim_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -261,7 +246,7 @@ def proc_pid_stat_rsslim_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "Processor")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_stat_cpu_metric(
     procStat: procfs.ProcStat,
     common_labels: str = "",
@@ -274,22 +259,23 @@ def proc_pid_stat_cpu_metric(
     )
 
 
-@register_metrics_fn(
-    metrics_fn_map,
-    ["UTime", "STime"],
-    require_history=True,
-)
+@register_metrics_fn(metrics_fn_map, require_history=True)
 def proc_pid_stat_pcpu_metrics(
     procStat: procfs.ProcStat,
     prevProcStat: procfs.ProcStat,
     common_labels: str = "",
     ts: Optional[int] = None,
     prev_ts: Optional[int] = None,
+    _full_metrics: bool = False,
 ) -> List[Metric]:
-    metrics = []
 
     delta_utime = procStat.UTime - prevProcStat.UTime
     delta_stime = procStat.STime - prevProcStat.STime
+
+    if not _full_metrics and delta_utime == 0 and delta_stime == 0:
+        return []
+
+    metrics = []
     if ts is None:
         ts = procStat._ts
     if prev_ts is None:

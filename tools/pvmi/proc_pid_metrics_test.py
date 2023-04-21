@@ -16,7 +16,7 @@ from tools_common import (
     ts_to_prometheus_ts,
 )
 
-from .common import Metric
+from .common import Metric, metrics_delta
 from .pid_list import get_pid_tid_list
 from .proc_pid_metrics import (
     PidMetricsCacheEntry,
@@ -39,6 +39,8 @@ ALL_PID_METRICS_DELTA_TEST_CASES_FILE_NAME = (
 PID_SCAN_INTERVAL_SECONDS = 1
 PREV_PROC_PID_CGROUP_DELTA = b"999999:controller_1,controller_2:path\n"
 PREV_PROC_PID_CMDLINE_DELTA = b"__no-such-command__\0"
+GUARANTEED_ACTIVE_THRESHOLD = 0
+# Next use more cpu ticks than exist in the scan interval:
 GUARANTEED_INACTIVE_THRESHOLD = 2 * int(PID_SCAN_INTERVAL_SECONDS / TestClktckSec + 1)
 
 
@@ -155,7 +157,7 @@ def make_full_metrics_pmtc(
     new_pmtc.WantPmce.FullMetricsCycleNum = new_pmtc.FullMetricsFactor
     update_pmtc_metrics(
         new_pmtc,
-        generate_pmce_full_metrics(new_pmtc.WantPmce, prev_pmce=new_pmtc.PrevPmce),
+        generate_pmce_full_metrics(new_pmtc.WantPmce, prev_pmce=new_pmtc.PrevPmce, _full_metrics=True),
     )
     return new_pmtc
 
@@ -169,6 +171,11 @@ def make_delta_pmtc(
     activeThreshold: Optional[int] = 0,
 ) -> PidMetricsTestCase:
     """Build a delta test case where just one field of a given stat changes"""
+
+    if pmce_stat_field == "ProcStat" and stat_field_spec == "Starttime":
+        # This would generate a new cache entry (a new start time of the same
+        # PID indicates a new process/thread, so there is no delta):
+        return None
 
     if name is None:
         try:
@@ -219,14 +226,16 @@ def make_delta_pmtc(
         else:
             alter_procfs_struct_field(prev_stat, stat_field_spec)
         update_pmce(new_pmtc.PrevPmce)
-        metrics_fn_map = pmce_field_to_metrics_fn_map[pmce_stat_field]
-        ts = new_pmtc.WantPmce.Timestamp
-        for metric_fn, require_history in metrics_fn_map[stat_field_spec]:
-            if require_history:
-                metric_or_metrics = metric_fn(stat, prev_stat, common_labels, ts=ts)
-            else:
-                metric_or_metrics = metric_fn(stat, common_labels, ts=ts)
-            update_pmtc_metrics(new_pmtc, metric_or_metrics)
+        update_pmtc_metrics(
+            new_pmtc,
+            metrics_delta(
+                generate_pmce_full_metrics(new_pmtc.PrevPmce),
+                generate_pmce_full_metrics(
+                    new_pmtc.WantPmce,
+                    prev_pmce=new_pmtc.PrevPmce,
+                ),
+            )
+        )
         update_pmtc_metrics(
             new_pmtc,
             generate_pcme_pseudo_categorical_change_metrics(
@@ -247,15 +256,21 @@ def make_active_threshold_test(
     # test cases: above and below active threshold. For the former only
     # ProcStat's ones should show in the generated metrics whereas for the
     # latter all should.
-    inactive_stat_field_spec_list = [("ProcStat", "RSS")]
-    active_stat_field_spec_list = inactive_stat_field_spec_list + [
+
+    # The following (stat, stat_field) will generate metrics for inactive processes:
+    inactive_stat_field_spec_list = [
+        ("ProcStat", "RSS")
+    ]
+    # The following (stat, stat_field) will generate metrics for active processes:
+    active_stat_field_spec_list = [
+        ("ProcStat", "RSS"),
         ("ProcStatus", "VmSize"),
         ("ProcIo", "RChar"),
     ]
 
     pmtc_list = []
     for active_threshold, stat_field_spec_list in [
-        (0, active_stat_field_spec_list),
+        (GUARANTEED_ACTIVE_THRESHOLD, active_stat_field_spec_list),
         (GUARANTEED_INACTIVE_THRESHOLD, inactive_stat_field_spec_list),
     ]:
         new_pmtc = clone_pmtc(
@@ -265,16 +280,18 @@ def make_active_threshold_test(
             activeThreshold=active_threshold,
         )
         for pmce_stat_field, stat_field_spec in stat_field_spec_list:
-            stat, prev_stat, common_labels = (
-                getattr(new_pmtc.WantPmce, pmce_stat_field),
-                getattr(new_pmtc.PrevPmce, pmce_stat_field),
-                new_pmtc.WantPmce.CommonLabels,
-            )
+            prev_stat = getattr(new_pmtc.PrevPmce, pmce_stat_field)
             alter_procfs_struct_field(prev_stat, stat_field_spec)
-            for metric_fn, _ in pmce_field_to_metrics_fn_map[pmce_stat_field][
-                stat_field_spec
-            ]:
-                update_pmtc_metrics(new_pmtc, metric_fn(stat, common_labels))
+        update_pmtc_metrics(
+            new_pmtc,
+            metrics_delta(
+                generate_pmce_full_metrics(new_pmtc.PrevPmce),
+                generate_pmce_full_metrics(
+                    new_pmtc.WantPmce,
+                    prev_pmce=new_pmtc.PrevPmce,
+                ),
+            )
+        )
         pmtc_list.append(new_pmtc)
     return pmtc_list
 
@@ -294,28 +311,6 @@ def get_stat_field_spec_pairs() -> List[
     ]
 
 
-def stat_field_spec_pair_generator(
-    stat_field_spec_pair_list: Tuple[PmceStatFieldName, procfs.ProcfsStructFieldSpec],
-    n: int,
-):
-    """Each next should rotate the field stat"""
-
-    by_field = {}
-    for pmce_stat_field, stat_field_spec in stat_field_spec_pair_list:
-        if pmce_stat_field not in by_field:
-            by_field[pmce_stat_field] = []
-        by_field[pmce_stat_field].append(stat_field_spec)
-    fields = sorted(by_field)
-    by_field_index = {pmce_stat_field: 0 for pmce_stat_field in by_field}
-    for i in range(n):
-        pmce_stat_field = fields[i % len(fields)]
-        stat_field_spec_index = by_field_index[pmce_stat_field]
-        by_field_index[pmce_stat_field] = (stat_field_spec_index + 1) % len(
-            by_field[pmce_stat_field]
-        )
-        yield pmce_stat_field, by_field[pmce_stat_field][stat_field_spec_index]
-
-
 def generate_test_case_files(
     procfs_root: str = TestdataProcfsRoot,
     test_case_dir: str = TestdataTestCasesDir,
@@ -328,7 +323,7 @@ def generate_test_case_files(
     # Select the test case w/ the highest [US]Time changes, best for delta
     # changes where %CPU is concerned:
     max_cputime = None
-    delta_pmtc = None
+    pmtc_used_for_delta = None
     for all_non_zero in [True, False]:
         for pmtc in pmtc_list:
             procStat = pmtc.WantPmce.ProcStat
@@ -337,20 +332,20 @@ def generate_test_case_files(
                 continue
             cputime = sum(cputimes)
             if max_cputime is None or cputime > max_cputime:
-                delta_pmtc = pmtc
-        if delta_pmtc is not None:
+                pmtc_used_for_delta = pmtc
+        if pmtc_used_for_delta is not None:
             break
 
     # Generate load test file:
     save_to_json_file(
-        delta_pmtc.to_json_compat(),
-        os.path.join(TestdataTestCasesDir, PID_METRICS_TEST_CASE_LOAD_FILE_NAME),
+        pmtc_used_for_delta.to_json_compat(),
+        os.path.join(test_case_dir, PID_METRICS_TEST_CASE_LOAD_FILE_NAME),
     )
 
     # Generate the simple (no prior info) test case file:
     save_to_json_file(
         [pmtc.to_json_compat() for pmtc in pmtc_list],
-        os.path.join(TestdataTestCasesDir, PID_METRICS_TEST_CASES_FILE_NAME),
+        os.path.join(test_case_dir, PID_METRICS_TEST_CASES_FILE_NAME),
     )
 
     # Generate the delta test case file for case by case run, which may be all
@@ -358,50 +353,55 @@ def generate_test_case_files(
     delta_pmtc_list = []
 
     # No change:
-    delta_pmtc_list.append(clone_pmtc(delta_pmtc))
+    delta_pmtc_list.append(clone_pmtc(pmtc_used_for_delta))
 
     # Full metrics, regardless of active threshold:
     # - all active:
-    delta_pmtc_list.append(make_full_metrics_pmtc(delta_pmtc, activeThreshold=0))
+    delta_pmtc_list.append(make_full_metrics_pmtc(pmtc_used_for_delta, activeThreshold=0))
     # - none active
     delta_pmtc_list.append(
         make_full_metrics_pmtc(
-            delta_pmtc,
+            pmtc_used_for_delta,
             activeThreshold=GUARANTEED_INACTIVE_THRESHOLD,
         )
     )
 
     # Active threshold tests:
-    delta_pmtc_list.extend(make_active_threshold_test(delta_pmtc))
-
-    # At the present, PID cgroup and cmdline do not have deltas:
-    stat_field_spec_list = [
-        (pmce_stat_field, stat_field_spec)
-        for (pmce_stat_field, stat_field_spec) in get_stat_field_spec_pairs()
-        if pmce_stat_field not in {"_procCgroups", "_procCmdline"}
-    ]
+    delta_pmtc_list.extend(make_active_threshold_test(pmtc_used_for_delta))
 
     # One delta at the time:
-    for pmce_stat_field, stat_field_spec in stat_field_spec_list:
-        new_pmtc = make_delta_pmtc(delta_pmtc, pmce_stat_field, stat_field_spec)
-        if new_pmtc is not None:
-            delta_pmtc_list.append(new_pmtc)
+    pmce_stat_field_list = [
+        pmce_stat_field 
+        for pmce_stat_field in sorted(pmce_field_to_metrics_fn_map)
+        # At the present PID cgroup and cmdline do not have deltas:
+        if pmce_stat_field not in {"_procCgroups", "_procCmdline"}
+    ]
+    for pmce_stat_field in pmce_stat_field_list:
+        stat = getattr(pmtc_used_for_delta.WantPmce, pmce_stat_field)
+        for stat_field_spec in stat.get_field_spec_list(recurse=True):
+            new_pmtc = make_delta_pmtc(pmtc_used_for_delta, pmce_stat_field, stat_field_spec)
+            if new_pmtc is not None:
+                delta_pmtc_list.append(new_pmtc)
+                
     save_to_json_file(
         [pmtc.to_json_compat() for pmtc in delta_pmtc_list],
-        os.path.join(TestdataTestCasesDir, PID_METRICS_DELTA_TEST_CASES_FILE_NAME),
+        os.path.join(test_case_dir, PID_METRICS_DELTA_TEST_CASES_FILE_NAME),
     )
 
-    # Generate delta test cases for each PID, TID to be used for
-    # GenerateAllPidMetrics; for each pid, tid rotate the stat:
-    delta_pmtc_list = []
 
-    for i, (pmce_stat_field, stat_field_spec) in enumerate(
-        stat_field_spec_pair_generator(stat_field_spec_list, len(pmtc_list))
-    ):
+    # Generate delta test cases for each PID, TID to be used for
+    # GenerateAllPidMetrics; for each pid, tid rotate the stat and the stat
+    # field:
+    delta_pmtc_list = []
+    for i in range(len(pmtc_list)):
+        pmce_stat_field = pmce_stat_field_list[i % len(pmce_stat_field_list)]
+        stat = getattr(pmtc_used_for_delta.WantPmce, pmce_stat_field)
+        stat_field_spec_list = stat.get_field_spec_list(recurse=True)
+        stat_field_spec = stat_field_spec_list[i % len(stat_field_spec_list)] 
         new_pmtc = make_delta_pmtc(pmtc_list[i], pmce_stat_field, stat_field_spec)
         if new_pmtc is not None:
             delta_pmtc_list.append(new_pmtc)
     save_to_json_file(
         [pmtc.to_json_compat() for pmtc in delta_pmtc_list],
-        os.path.join(TestdataTestCasesDir, ALL_PID_METRICS_DELTA_TEST_CASES_FILE_NAME),
+        os.path.join(test_case_dir, ALL_PID_METRICS_DELTA_TEST_CASES_FILE_NAME),
     )

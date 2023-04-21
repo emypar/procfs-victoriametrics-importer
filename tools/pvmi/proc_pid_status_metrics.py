@@ -13,21 +13,7 @@ from .common import Metric, register_metrics_fn
 metrics_fn_map = {}
 
 
-@register_metrics_fn(
-    metrics_fn_map,
-    [
-        "Name",
-        "TGID",
-        ("UIDs", UidGidIndex.REAL_ID),
-        ("UIDs", UidGidIndex.EFFECTIVE_ID),
-        ("UIDs", UidGidIndex.SAVED_ID),
-        ("UIDs", UidGidIndex.FILESYSTEM_ID),
-        ("GIDs", UidGidIndex.REAL_ID),
-        ("GIDs", UidGidIndex.EFFECTIVE_ID),
-        ("GIDs", UidGidIndex.SAVED_ID),
-        ("GIDs", UidGidIndex.FILESYSTEM_ID),
-    ],
-)
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_info_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -58,7 +44,7 @@ def proc_pid_status_info_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmPeak")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_peak_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -71,7 +57,7 @@ def proc_pid_status_vm_peak_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmSize")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_peak_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -84,7 +70,7 @@ def proc_pid_status_vm_peak_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmLck")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_lck_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -97,7 +83,7 @@ def proc_pid_status_vm_lck_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmPin")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_lck_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -110,7 +96,7 @@ def proc_pid_status_vm_lck_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmHWM")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_hwm_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -123,7 +109,7 @@ def proc_pid_status_vm_hwm_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmRSS")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_rss_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -136,7 +122,7 @@ def proc_pid_status_vm_rss_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "RssAnon")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_rss_anon_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -149,7 +135,7 @@ def proc_pid_status_vm_rss_anon_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "RssFile")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_rss_file_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -162,7 +148,7 @@ def proc_pid_status_vm_rss_file_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "RssShmem")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_rss_shmem_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -175,7 +161,7 @@ def proc_pid_status_vm_rss_shmem_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmData")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_data_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -188,7 +174,7 @@ def proc_pid_status_vm_data_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmStk")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_stk_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -201,7 +187,7 @@ def proc_pid_status_vm_stk_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmExe")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_exe_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -214,7 +200,7 @@ def proc_pid_status_vm_exe_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmLib")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_lib_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -227,7 +213,7 @@ def proc_pid_status_vm_lib_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmPTE")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_pte_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -240,7 +226,7 @@ def proc_pid_status_vm_pte_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmPMD")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_pmd_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -253,7 +239,7 @@ def proc_pid_status_vm_pmd_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VmSwap")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_vm_swap_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -266,7 +252,7 @@ def proc_pid_status_vm_swap_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "HugetlbPages")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_hugetbl_pages_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -279,7 +265,7 @@ def proc_pid_status_hugetbl_pages_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "VoluntaryCtxtSwitches")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_voluntary_ctxt_switches_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",
@@ -292,7 +278,7 @@ def proc_pid_status_voluntary_ctxt_switches_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map, "NonVoluntaryCtxtSwitches")
+@register_metrics_fn(metrics_fn_map)
 def proc_pid_status_nonvoluntary_ctxt_switches_metric(
     procStatus: procfs.ProcStatus,
     common_labels: str = "",

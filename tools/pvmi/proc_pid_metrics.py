@@ -16,7 +16,7 @@ from . import (
     proc_pid_stat_metrics,
     proc_pid_status_metrics,
 )
-from .common import Metric, get_metrics_fn_list
+from .common import Metric
 
 PmceStatFieldName = Literal[
     "ProcStat", "ProcStatus", "ProcIo", "_procCgroups", "_procCmdline"
@@ -152,13 +152,14 @@ def generate_pmce_full_metrics(
     ts: Optional[int] = None,
     prev_pmce: Optional[PidMetricsCacheEntry] = None,
     prev_ts: Optional[int] = None,
+    _full_metrics: bool = False,
 ) -> List[Metric]:
     if ts is None:
         ts = pmce.Timestamp
     metrics = []
 
     for pmce_stat_field, metrics_fn_map in pmce_field_to_metrics_fn_map.items():
-        for metric_fn, require_history in get_metrics_fn_list(metrics_fn_map):
+        for metric_fn, require_history in metrics_fn_map.items():
             metric_or_metrics = None
             if require_history:
                 if prev_pmce is not None:
@@ -168,6 +169,7 @@ def generate_pmce_full_metrics(
                         pmce.CommonLabels,
                         ts=ts,
                         prev_ts=prev_ts,
+                        _full_metrics=_full_metrics,
                     )
             else:
                 metric_or_metrics = metric_fn(
