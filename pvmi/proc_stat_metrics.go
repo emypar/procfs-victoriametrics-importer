@@ -62,8 +62,11 @@ type ProcStatMetricsContext struct {
 	// for stats that changed from the previous run, however the full set is
 	// generated at every Nth pass. Use  N = 1 for full metrics every time.
 	fullMetricsFactor int64
-	// The pass# % fullMetricsFactor:
-	passNum int64
+	// The refresh cycle#, modulo fullMetricsFactor. Metrics are bundled
+	// together in groups with group# also modulo fullMetricsFactor. Each time
+	// group# == refresh cycle, all the metrics in the group are generated
+	// regardless whether they changed or not from the previous scan:
+	refreshCycleNum int64
 	// procfs filesystem for procfs parsers:
 	fs procfs.FS
 	// Cache previous parsed data for delta and/or %:
@@ -173,12 +176,49 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 		pctFactor = 100. / statsTs.Sub(procStatMetricsCtx.prevTs).Seconds()
 	}
 
-	passNum, fullMetricsFactor := procStatMetricsCtx.passNum, procStatMetricsCtx.fullMetricsFactor
+	refreshCycleNum, fullMetricsFactor := procStatMetricsCtx.refreshCycleNum, procStatMetricsCtx.fullMetricsFactor
 	statsGroupNum := int64(0)
+
+	gaugeMetricFmt := procStatMetricsCtx.gaugeMetricFmt
+	if prevStat == nil {
+		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_BOOT_TIME_METRIC_NAME, stat.BootTime, promTs)
+		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_IRQ_TOTAL_METRIC_NAME, stat.IRQTotal, promTs)
+		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_SOFTIRQ_TOTAL_METRIC_NAME, stat.SoftIRQTotal, promTs)
+		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_CONTEXT_SWITCHES_METRIC_NAME, stat.ContextSwitches, promTs)
+		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_CREATED_METRIC_NAME, stat.ProcessCreated, promTs)
+		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_RUNNING_METRIC_NAME, stat.ProcessesRunning, promTs)
+		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_BLOCKED_METRIC_NAME, stat.ProcessesBlocked, promTs)
+	} else {
+		fullMetrics := statsGroupNum == refreshCycleNum
+		if fullMetrics || stat.BootTime != prevStat.BootTime {
+			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_BOOT_TIME_METRIC_NAME, stat.BootTime, promTs)
+		}
+		if fullMetrics || stat.IRQTotal != prevStat.IRQTotal {
+			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_IRQ_TOTAL_METRIC_NAME, stat.IRQTotal, promTs)
+		}
+		if fullMetrics || stat.SoftIRQTotal != prevStat.SoftIRQTotal {
+			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_SOFTIRQ_TOTAL_METRIC_NAME, stat.SoftIRQTotal, promTs)
+		}
+		if fullMetrics || stat.ContextSwitches != prevStat.ContextSwitches {
+			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_CONTEXT_SWITCHES_METRIC_NAME, stat.ContextSwitches, promTs)
+		}
+		if fullMetrics || stat.ProcessCreated != prevStat.ProcessCreated {
+			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_CREATED_METRIC_NAME, stat.ProcessCreated, promTs)
+		}
+		if fullMetrics || stat.ProcessesRunning != prevStat.ProcessesRunning {
+			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_RUNNING_METRIC_NAME, stat.ProcessesRunning, promTs)
+		}
+		if fullMetrics || stat.ProcessesBlocked != prevStat.ProcessesBlocked {
+			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_BLOCKED_METRIC_NAME, stat.ProcessesBlocked, promTs)
+		}
+	}
+	if statsGroupNum += 1; statsGroupNum >= fullMetricsFactor {
+		statsGroupNum = 0
+	}
 
 	cpuMetricsWithCorrection := func(cpuStat *procfs.CPUStat, prevCpuStat *procfs.CPUStat, cpu string) {
 
-		fullMetrics := statsGroupNum == passNum
+		fullMetrics := statsGroupNum == refreshCycleNum
 
 		procfsUserHZCorrectionFactor := procStatMetricsCtx.procfsUserHZCorrectionFactor
 		if procfsUserHZCorrectionFactor != 1 {
@@ -254,64 +294,35 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 	}
 
 	var prevCpuStat *procfs.CPUStat = nil
+
 	if prevStat != nil {
 		prevCpuStat = &prevStat.CPUTotal
 	}
 	cpuMetricsWithCorrection(&stat.CPUTotal, prevCpuStat, PROC_STAT_CPU_METRIC_CPU_LABEL_TOTAL_VALUE)
-	if statsGroupNum += 1; statsGroupNum >= fullMetricsFactor {
-		statsGroupNum = 0
-	}
+
+	// For testing purposes statsGroupNum should be predictable; however the CPU
+	// stats are iterated in hash order, so rather then use the order for
+	// statsGroupNum, we will use the statsGroupNum + CPU#. This way the test
+	// program can determine which CPU should be fully refreshed for a given cycle.
+	cpuStatGroupNumBase := statsGroupNum + 1
 	for i, cpuStat := range stat.CPU {
 		var prevCpuStatI procfs.CPUStat
 		if prevStat != nil {
 			prevCpuStatI = prevStat.CPU[i]
 			prevCpuStat = &prevCpuStatI
 		}
-		cpuMetricsWithCorrection(&cpuStat, prevCpuStat, strconv.FormatInt(i, 10))
-		if statsGroupNum += 1; statsGroupNum >= fullMetricsFactor {
+		if statsGroupNum = cpuStatGroupNumBase + i; statsGroupNum >= fullMetricsFactor {
 			statsGroupNum = 0
 		}
+		cpuMetricsWithCorrection(&cpuStat, prevCpuStat, strconv.FormatInt(i, 10))
 	}
 
-	gaugeMetricFmt := procStatMetricsCtx.gaugeMetricFmt
-	if prevStat == nil {
-		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_BOOT_TIME_METRIC_NAME, stat.BootTime, promTs)
-		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_IRQ_TOTAL_METRIC_NAME, stat.IRQTotal, promTs)
-		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_SOFTIRQ_TOTAL_METRIC_NAME, stat.SoftIRQTotal, promTs)
-		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_CONTEXT_SWITCHES_METRIC_NAME, stat.ContextSwitches, promTs)
-		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_CREATED_METRIC_NAME, stat.ProcessCreated, promTs)
-		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_RUNNING_METRIC_NAME, stat.ProcessesRunning, promTs)
-		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_BLOCKED_METRIC_NAME, stat.ProcessesBlocked, promTs)
-	} else {
-		fullMetrics := statsGroupNum == passNum
-		if fullMetrics || stat.BootTime != prevStat.BootTime {
-			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_BOOT_TIME_METRIC_NAME, stat.BootTime, promTs)
-		}
-		if fullMetrics || stat.IRQTotal != prevStat.IRQTotal {
-			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_IRQ_TOTAL_METRIC_NAME, stat.IRQTotal, promTs)
-		}
-		if fullMetrics || stat.SoftIRQTotal != prevStat.SoftIRQTotal {
-			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_SOFTIRQ_TOTAL_METRIC_NAME, stat.SoftIRQTotal, promTs)
-		}
-		if fullMetrics || stat.ContextSwitches != prevStat.ContextSwitches {
-			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_CONTEXT_SWITCHES_METRIC_NAME, stat.ContextSwitches, promTs)
-		}
-		if fullMetrics || stat.ProcessCreated != prevStat.ProcessCreated {
-			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_CREATED_METRIC_NAME, stat.ProcessCreated, promTs)
-		}
-		if fullMetrics || stat.ProcessesRunning != prevStat.ProcessesRunning {
-			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_RUNNING_METRIC_NAME, stat.ProcessesRunning, promTs)
-		}
-		if fullMetrics || stat.ProcessesBlocked != prevStat.ProcessesBlocked {
-			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_BLOCKED_METRIC_NAME, stat.ProcessesBlocked, promTs)
-		}
-	}
 	procStatMetricsCtx.prevStat = &stat
 	procStatMetricsCtx.prevTs = statsTs
-	if passNum += 1; passNum >= fullMetricsFactor {
-		passNum = 0
+	if refreshCycleNum += 1; refreshCycleNum >= fullMetricsFactor {
+		refreshCycleNum = 0
 	}
-	procStatMetricsCtx.passNum = passNum
+	procStatMetricsCtx.refreshCycleNum = refreshCycleNum
 
 	if wChan != nil {
 		wChan <- buf
