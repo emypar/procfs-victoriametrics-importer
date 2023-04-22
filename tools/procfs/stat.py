@@ -95,7 +95,7 @@ def load_stat(
 ) -> Stat:
     stat_path = os.path.join(procfs_root, "stat")
     ts = os.stat(stat_path).st_mtime if _use_ts_from_file else time.time()
-    stat = Stat(_ts=ts)
+    stat = Stat(_ts=ts_to_prometheus_ts(ts))
     with open(stat_path, "rt") as f:
         for line in f:
             words = line.split()
