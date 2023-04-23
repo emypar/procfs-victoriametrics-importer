@@ -156,7 +156,6 @@ func runPidMetricsTestCase(
 	pmc PidMetricsCache,
 	psc PidStarttimeCache,
 	tm *PidMetricsTestTimeNowMock,
-
 ) {
 	fs, err := procfs.NewFS(pmtc.ProcfsRoot)
 	if err != nil {

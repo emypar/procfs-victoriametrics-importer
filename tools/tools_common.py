@@ -17,7 +17,7 @@ class StructBase:
         return [
             field for field in self.__dataclass_fields__ if not field.startswith("_")
         ]
-    
+
     def to_json_compat(self, ignore_none: bool = False):
         json_compat = {}
         for field in self.field_list():
@@ -35,7 +35,12 @@ class StructBase:
             elif isinstance(val, set):
                 val = {str(v): True for v in val if v is not None or not ignore_none}
             elif isinstance(val, dict):
-                val = {str(k): v.to_json_compat(ignore_none=ignore_none) if hasattr(v, "to_json_compat") else v  for (k, v) in val.items()}
+                val = {
+                    str(k): v.to_json_compat(ignore_none=ignore_none)
+                    if hasattr(v, "to_json_compat")
+                    else v
+                    for (k, v) in val.items()
+                }
             elif hasattr(val, "to_json_compat"):
                 val = val.to_json_compat(ignore_none=ignore_none)
             if val is not None or not ignore_none:

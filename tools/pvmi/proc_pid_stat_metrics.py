@@ -6,12 +6,7 @@ import functools
 from typing import List, Optional
 
 import procfs
-from metrics_common_test import (
-    TestClktckSec,
-    TestdataProcfsRoot,
-    TestHostname,
-    TestJob,
-)
+from metrics_common_test import TestClktckSec, TestdataProcfsRoot, TestHostname, TestJob
 from tools_common import sanitize_label_value
 
 from .common import Metric, register_metrics_fn
@@ -29,7 +24,9 @@ def make_common_labels(
         pid, tid=tid, procfs_root=procfs_root
     ).Starttime
     if tid == 0:
-        return f'''hostname="{hostname}",job="{job}",pid="{pid}",starttime="{starttime}"'''
+        return (
+            f'''hostname="{hostname}",job="{job}",pid="{pid}",starttime="{starttime}"'''
+        )
     else:
         t_starttime = starttime
         if pid != tid:

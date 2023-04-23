@@ -19,7 +19,7 @@ const (
 	PROC_STAT_CPU_IDLE_TIME_METRIC_NAME           = "proc_stat_cpu_idle_time_seconds"
 	PROC_STAT_CPU_IOWAIT_TIME_METRIC_NAME         = "proc_stat_cpu_iowait_time_seconds"
 	PROC_STAT_CPU_IRQ_TIME_METRIC_NAME            = "proc_stat_cpu_irq_time_seconds"
-	PROC_STAT_CPU_SOFTIRQ_TIME_METRIC_NAME        = "proc_stat_softirq_user_time_seconds"
+	PROC_STAT_CPU_SOFTIRQ_TIME_METRIC_NAME        = "proc_stat_cpu_softirq_time_seconds"
 	PROC_STAT_CPU_STEAL_TIME_METRIC_NAME          = "proc_stat_cpu_steal_time_seconds"
 	PROC_STAT_CPU_GUEST_TIME_METRIC_NAME          = "proc_stat_cpu_guest_time_seconds"
 	PROC_STAT_CPU_GUEST_NICE_TIME_METRIC_NAME     = "proc_stat_cpu_guest_nice_time_seconds"
@@ -29,7 +29,7 @@ const (
 	PROC_STAT_CPU_IDLE_TIME_PCT_METRIC_NAME       = "proc_stat_cpu_idle_time_pct"
 	PROC_STAT_CPU_IOWAIT_TIME_PCT_METRIC_NAME     = "proc_stat_cpu_iowait_time_pct"
 	PROC_STAT_CPU_IRQ_TIME_PCT_METRIC_NAME        = "proc_stat_cpu_irq_time_pct"
-	PROC_STAT_CPU_SOFTIRQ_TIME_PCT_METRIC_NAME    = "proc_stat_softirq_user_time_pct"
+	PROC_STAT_CPU_SOFTIRQ_TIME_PCT_METRIC_NAME    = "proc_stat_cpu_softirq_time_pct"
 	PROC_STAT_CPU_STEAL_TIME_PCT_METRIC_NAME      = "proc_stat_cpu_steal_time_pct"
 	PROC_STAT_CPU_GUEST_TIME_PCT_METRIC_NAME      = "proc_stat_cpu_guest_time_pct"
 	PROC_STAT_CPU_GUEST_NICE_TIME_PCT_METRIC_NAME = "proc_stat_cpu_guest_nice_time_pct"
@@ -217,7 +217,6 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 	}
 
 	cpuMetricsWithCorrection := func(cpuStat *procfs.CPUStat, prevCpuStat *procfs.CPUStat, cpu string) {
-
 		fullMetrics := statsGroupNum == refreshCycleNum
 
 		procfsUserHZCorrectionFactor := procStatMetricsCtx.procfsUserHZCorrectionFactor
@@ -248,7 +247,6 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 			fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_STEAL_TIME_METRIC_NAME, cpu, cpuStat.Steal, promTs)
 			fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_GUEST_TIME_METRIC_NAME, cpu, cpuStat.Guest, promTs)
 			fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_GUEST_NICE_TIME_METRIC_NAME, cpu, cpuStat.GuestNice, promTs)
-
 		} else {
 			if fullMetrics || cpuStat.User != prevCpuStat.User {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_USER_TIME_METRIC_NAME, cpu, cpuStat.User, promTs)
@@ -306,10 +304,8 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 	// program can determine which CPU should be fully refreshed for a given cycle.
 	cpuStatGroupNumBase := statsGroupNum + 1
 	for i, cpuStat := range stat.CPU {
-		var prevCpuStatI procfs.CPUStat
 		if prevStat != nil {
-			prevCpuStatI = prevStat.CPU[i]
-			prevCpuStat = &prevCpuStatI
+			*prevCpuStat = prevStat.CPU[i]
 		}
 		if statsGroupNum = cpuStatGroupNumBase + i; statsGroupNum >= fullMetricsFactor {
 			statsGroupNum = 0

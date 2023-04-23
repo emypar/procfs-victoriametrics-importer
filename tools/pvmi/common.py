@@ -5,9 +5,7 @@
 import dataclasses
 import os
 import sys
-from typing import Callable, Dict, List, Optional, Tuple, Union
-
-from procfs import ProcfsStructFieldSpec
+from typing import Callable, Dict, List, Optional, Union
 
 tools_dir = os.path.dirname(
     os.path.normpath(os.path.abspath(os.path.dirname(__file__)))
@@ -15,6 +13,7 @@ tools_dir = os.path.dirname(
 sys.path.extend(tools_dir)
 
 MetricsFnMap = Dict[Callable, bool]
+
 
 @dataclasses.dataclass
 class Metric:
@@ -40,12 +39,10 @@ class Metric:
         return self.metric[:i] if i >= 0 else self.metric
 
 
-def metrics_delta(
-    prev_metrics: List[Metric],
-    metrics: List[Metric]
-) -> List[Metric]:
+def metrics_delta(prev_metrics: List[Metric], metrics: List[Metric]) -> List[Metric]:
     prev_metrics_name_val = set(
-        (m.metric, m.val if m.valfmt is None else f"{m.val:{m.valfmt}}") for m in prev_metrics
+        (m.metric, m.val if m.valfmt is None else f"{m.val:{m.valfmt}}")
+        for m in prev_metrics
     )
     delta_metrics = []
     for m in metrics:
@@ -53,6 +50,7 @@ def metrics_delta(
         if (m.metric, val) not in prev_metrics_name_val:
             delta_metrics.append(m)
     return delta_metrics
+
 
 def register_metrics_fn(
     metrics_fn_map: MetricsFnMap,

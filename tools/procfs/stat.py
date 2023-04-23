@@ -4,42 +4,42 @@
 # reference: https:#github.com/prometheus/procfs/blob/master/stat.go
 
 import dataclasses
-import enum
 import os
 import re
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List
 
-from metrics_common_test import TestdataProcfsRoot, TestClktckSec
+from metrics_common_test import TestClktckSec, TestdataProcfsRoot
 from tools_common import ts_to_prometheus_ts
 
-from .common import ProcfsStructBase, proc_pid_dir
+from .common import ProcfsStructBase
+
 
 @dataclasses.dataclass
 class CPUStat(ProcfsStructBase):
-    User: float = 0.
-    Nice: float = 0.
-    System: float = 0.
-    Idle: float = 0.
-    Iowait: float = 0.
-    IRQ: float = 0.
-    SoftIRQ: float = 0.
-    Steal: float = 0.
-    Guest: float = 0.
-    GuestNice: float = 0.
-        
+    User: float = 0.0
+    Nice: float = 0.0
+    System: float = 0.0
+    Idle: float = 0.0
+    Iowait: float = 0.0
+    IRQ: float = 0.0
+    SoftIRQ: float = 0.0
+    Steal: float = 0.0
+    Guest: float = 0.0
+    GuestNice: float = 0.0
+
     def __init__(
-        self, 
-        user: str, 
-        nice: str, 
-        system: str, 
-        idle: str, 
-        iowait: str, 
-        irq: str, 
-        softirq: str, 
+        self,
+        user: str,
+        nice: str,
+        system: str,
+        idle: str,
+        iowait: str,
+        irq: str,
+        softirq: str,
         steal: str = "0",
         guest: str = "0",
-        guest_nice: str = "0", 
+        guest_nice: str = "0",
     ):
         self.User = float(user) * TestClktckSec
         self.Nice = float(nice) * TestClktckSec
@@ -50,6 +50,7 @@ class CPUStat(ProcfsStructBase):
         self.Steal = float(steal) * TestClktckSec
         self.Guest = float(guest) * TestClktckSec
         self.GuestNice = float(guest_nice) * TestClktckSec
+
 
 @dataclasses.dataclass
 class SoftIRQStat(ProcfsStructBase):
@@ -63,6 +64,7 @@ class SoftIRQStat(ProcfsStructBase):
     Sched: int = 0
     Hrtimer: int = 0
     Rcu: int = 0
+
 
 @dataclasses.dataclass
 class Stat(ProcfsStructBase):
@@ -89,6 +91,7 @@ class Stat(ProcfsStructBase):
     # Detailed softirq statistics.
     SoftIRQ: SoftIRQStat = None
 
+
 def load_stat(
     procfs_root: str = TestdataProcfsRoot,
     _use_ts_from_file: bool = True,
@@ -102,7 +105,7 @@ def load_stat(
             if words[0] == "cpu":
                 stat.CPUTotal = CPUStat(*words[1:])
                 continue
-            m = re.match(r'cpu(\d+)$', words[0])
+            m = re.match(r"cpu(\d+)$", words[0])
             if m is not None:
                 cpuN = int(m.group(1))
                 stat.CPU[cpuN] = CPUStat(*words[1:])
@@ -114,7 +117,7 @@ def load_stat(
                 stat.IRQTotal = int(words[1])
                 stat.IRQ = list(int(w) for w in words[2:])
                 continue
-            if words[0] == "ctx":
+            if words[0] == "ctxt":
                 stat.ContextSwitches = int(words[1])
                 continue
             if words[0] == "processes":
@@ -132,4 +135,3 @@ def load_stat(
                 continue
 
     return stat
-
