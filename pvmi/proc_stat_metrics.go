@@ -285,8 +285,8 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_GUEST_TIME_PCT_METRIC_NAME, cpu, (cpuStat.Guest-prevCpuStat.Guest)*pctFactor, promTs)
 			}
 			if fullMetrics || cpuStat.GuestNice != prevCpuStat.GuestNice {
-				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_GUEST_TIME_METRIC_NAME, cpu, cpuStat.GuestNice, promTs)
-				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_GUEST_TIME_PCT_METRIC_NAME, cpu, (cpuStat.GuestNice-prevCpuStat.GuestNice)*pctFactor, promTs)
+				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_GUEST_NICE_TIME_METRIC_NAME, cpu, cpuStat.GuestNice, promTs)
+				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_GUEST_NICE_TIME_PCT_METRIC_NAME, cpu, (cpuStat.GuestNice-prevCpuStat.GuestNice)*pctFactor, promTs)
 			}
 		}
 	}

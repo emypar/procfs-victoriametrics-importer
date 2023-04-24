@@ -15,6 +15,11 @@ from tools_common import ts_to_prometheus_ts
 from .common import ProcfsStructBase
 
 
+def round_float(f: float, dp: int = 7) -> float:
+    ten_power = 10**dp
+    return int(f * ten_power) / float(ten_power)
+
+
 @dataclasses.dataclass
 class CPUStat(ProcfsStructBase):
     User: float = 0.0
@@ -41,15 +46,15 @@ class CPUStat(ProcfsStructBase):
         guest: str = "0",
         guest_nice: str = "0",
     ):
-        self.User = float(user) * TestClktckSec
-        self.Nice = float(nice) * TestClktckSec
-        self.System = float(system) * TestClktckSec
-        self.Idle = float(idle) * TestClktckSec
-        self.Iowait = float(iowait) * TestClktckSec
-        self.SoftIRQ = float(softirq) * TestClktckSec
-        self.Steal = float(steal) * TestClktckSec
-        self.Guest = float(guest) * TestClktckSec
-        self.GuestNice = float(guest_nice) * TestClktckSec
+        self.User = round_float(float(user) * TestClktckSec)
+        self.Nice = round_float(float(nice) * TestClktckSec)
+        self.System = round_float(float(system) * TestClktckSec)
+        self.Idle = round_float(float(idle) * TestClktckSec)
+        self.Iowait = round_float(float(iowait) * TestClktckSec)
+        self.SoftIRQ = round_float(float(softirq) * TestClktckSec)
+        self.Steal = round_float(float(steal) * TestClktckSec)
+        self.Guest = round_float(float(guest) * TestClktckSec)
+        self.GuestNice = round_float(float(guest_nice) * TestClktckSec)
 
 
 @dataclasses.dataclass
@@ -95,6 +100,7 @@ class Stat(ProcfsStructBase):
 def load_stat(
     procfs_root: str = TestdataProcfsRoot,
     _use_ts_from_file: bool = True,
+    _include_irq_details: bool = False,
 ) -> Stat:
     stat_path = os.path.join(procfs_root, "stat")
     ts = os.stat(stat_path).st_mtime if _use_ts_from_file else time.time()
@@ -115,7 +121,8 @@ def load_stat(
                 continue
             if words[0] == "intr":
                 stat.IRQTotal = int(words[1])
-                stat.IRQ = list(int(w) for w in words[2:])
+                if _include_irq_details:
+                    stat.IRQ = list(int(w) for w in words[2:])
                 continue
             if words[0] == "ctxt":
                 stat.ContextSwitches = int(words[1])
@@ -131,7 +138,8 @@ def load_stat(
                 continue
             if words[0] == "softirq":
                 stat.SoftIRQTotal = int(words[1])
-                stat.SoftIRQ = SoftIRQStat(*[int(w) for w in words[2:]])
+                if _include_irq_details:
+                    stat.SoftIRQ = SoftIRQStat(*[int(w) for w in words[2:]])
                 continue
 
     return stat

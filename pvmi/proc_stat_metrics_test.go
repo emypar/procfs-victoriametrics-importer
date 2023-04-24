@@ -31,7 +31,8 @@ type ProcStatMetricsTestCase struct {
 }
 
 const (
-	PROC_STAT_METRICS_TEST_CASES_FILE_NAME = "proc_stat_metrics_test_cases.json"
+	PROC_STAT_METRICS_TEST_CASES_FILE_NAME       = "proc_stat_metrics_test_cases.json"
+	PROC_STAT_METRICS_DELTA_TEST_CASES_FILE_NAME = "proc_stat_metrics_delta_test_cases.json"
 )
 
 func procStatTest(t *testing.T, tc *ProcStatMetricsTestCase) {
@@ -54,6 +55,9 @@ func procStatTest(t *testing.T, tc *ProcStatMetricsTestCase) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	procStatMetricsCtx.prevStat = tc.PrevStat
+	procStatMetricsCtx.prevTs = time.UnixMilli(tc.PrevTimestamp)
+	procStatMetricsCtx.refreshCycleNum = tc.RefreshCycleNum
 	gotMetrics := testutils.DuplicateStrings(
 		testutils.CollectMetrics(
 			func(wChan chan *bytes.Buffer) {
@@ -97,8 +101,28 @@ func TestProcStat(t *testing.T) {
 	for _, tc := range tcList {
 		t.Run(
 			fmt.Sprintf(
-				"Name=%s",
-				tc.Name,
+				"Name=%s,FullMetricsFactor=%d,RefreshCycleNum=%d",
+				tc.Name, tc.FullMetricsFactor, tc.RefreshCycleNum,
+			),
+			func(t *testing.T) { procStatTest(t, &tc) },
+		)
+	}
+}
+
+func TestProcStatDelta(t *testing.T) {
+	tcList := []ProcStatMetricsTestCase{}
+	err := testutils.LoadJsonFile(
+		path.Join(TestdataTestCasesDir, PROC_STAT_METRICS_DELTA_TEST_CASES_FILE_NAME),
+		&tcList,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range tcList {
+		t.Run(
+			fmt.Sprintf(
+				"Name=%s,FullMetricsFactor=%d,RefreshCycleNum=%d",
+				tc.Name, tc.FullMetricsFactor, tc.RefreshCycleNum,
 			),
 			func(t *testing.T) { procStatTest(t, &tc) },
 		)

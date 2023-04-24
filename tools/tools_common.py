@@ -8,7 +8,7 @@ from typing import Any
 
 from metrics_common_test import PVMI_TOP_DIR
 
-pvmi_pkg_dir = os.path.join(PVMI_TOP_DIR, "pvmi")
+pvmi_go_pkg_dir = os.path.join(PVMI_TOP_DIR, "pvmi")
 
 
 @dataclasses.dataclass
@@ -56,7 +56,7 @@ def sanitize_label_value(v: str) -> str:
     return v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 
 
-def rel_path_to_file(src_path: str, ref_path: str = pvmi_pkg_dir) -> str:
+def rel_path_to_file(src_path: str, ref_path: str = pvmi_go_pkg_dir) -> str:
     src_path = os.path.normpath(os.path.abspath(src_path))
     ref_path = os.path.normpath(os.path.abspath(ref_path))
     if os.path.isfile(ref_path):

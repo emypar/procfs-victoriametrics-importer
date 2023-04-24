@@ -83,7 +83,7 @@ def proc_stat_pcpu_metrics(
             ("SoftIRQ", "proc_stat_cpu_softirq_time_pct"),
             ("Steal", "proc_stat_cpu_steal_time_pct"),
             ("Guest", "proc_stat_cpu_guest_time_pct"),
-            ("GuestNice", "proc_stat_guest_nice_nice_time_pct"),
+            ("GuestNice", "proc_stat_cpu_guest_nice_time_pct"),
         ]:
             val = cpu_stat.get_field(field)
             prev_val = prev_cpu_stat.get_field(field)
