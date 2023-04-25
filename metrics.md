@@ -166,26 +166,8 @@ Parser: [stat.go](https://github.com/prometheus/procfs/blob/master/stat.go)
 
 | Metric | Labels | Value | Obs |
 | ------ | ------ | ----- | --- |
-| proc_stat_cpu_user_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_nice_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_system_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_idle_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_iowait_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_irq_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_softirq_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_steal_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_guest_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_guest_nice_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
-| proc_stat_cpu_user_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_nice_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_system_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_idle_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_iowait_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_irq_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_softirq_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_steal_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_guest_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
-| proc_stat_cpu_guest_nice_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br> |  |  |
+| proc_stat_cpu_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br>type=user\|nice\|system\|idle\|iowait\|irq\|softirq\|steal\|guest\|guest_nice |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
+| proc_stat_cpu_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br>type=user\|nice\|system\|idle\|iowait\|irq\|softirq\|steal\|guest\|guest_nice |  |  |
 | proc_stat_boot_time | hostname=_hostname_<br>job=_job_<br> | |
 | proc_stat_irq_total_count | hostname=_hostname_<br>job=_job_<br> | Counter | |
 | proc_stat_softirq_total_count | hostname=_hostname_<br>job=_job_<br> | Counter | |

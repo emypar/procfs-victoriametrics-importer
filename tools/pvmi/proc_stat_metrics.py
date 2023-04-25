@@ -25,22 +25,22 @@ def proc_stat_cpu_metrics(
     if ts is None:
         ts = proc_stat._ts
     for cpu, cpu_stat in cpu_stat_map.items():
-        for field, metric_name in [
-            ("User", "proc_stat_cpu_user_time_seconds"),
-            ("Nice", "proc_stat_cpu_nice_time_seconds"),
-            ("System", "proc_stat_cpu_system_time_seconds"),
-            ("Idle", "proc_stat_cpu_idle_time_seconds"),
-            ("Iowait", "proc_stat_cpu_iowait_time_seconds"),
-            ("IRQ", "proc_stat_cpu_irq_time_seconds"),
-            ("SoftIRQ", "proc_stat_cpu_softirq_time_seconds"),
-            ("Steal", "proc_stat_cpu_steal_time_seconds"),
-            ("Guest", "proc_stat_cpu_guest_time_seconds"),
-            ("GuestNice", "proc_stat_cpu_guest_nice_time_seconds"),
+        for field, metric_type in [
+            ("User", "user"),
+            ("Nice", "nice"),
+            ("System", "system"),
+            ("Idle", "idle"),
+            ("Iowait", "iowait"),
+            ("IRQ", "irq"),
+            ("SoftIRQ", "softirq"),
+            ("Steal", "steal"),
+            ("Guest", "guest"),
+            ("GuestNice", "guest_nice"),
         ]:
             val = cpu_stat.get_field(field)
             metrics.append(
                 Metric(
-                    metric=f'{metric_name}{{hostname="{_hostname}",job="{_job}",cpu="{cpu}"}}',
+                    metric=f'proc_stat_cpu_time_seconds{{hostname="{_hostname}",job="{_job}",cpu="{cpu}",type="{metric_type}"}}',
                     val=val,
                     ts=ts,
                     valfmt=".06f",
@@ -73,17 +73,17 @@ def proc_stat_pcpu_metrics(
     for cpu in cpu_stat_map:
         cpu_stat = cpu_stat_map[cpu]
         prev_cpu_stat = prev_cpu_stat_map[cpu]
-        for field, metric_name in [
-            ("User", "proc_stat_cpu_user_time_pct"),
-            ("Nice", "proc_stat_cpu_nice_time_pct"),
-            ("System", "proc_stat_cpu_system_time_pct"),
-            ("Idle", "proc_stat_cpu_idle_time_pct"),
-            ("Iowait", "proc_stat_cpu_iowait_time_pct"),
-            ("IRQ", "proc_stat_cpu_irq_time_pct"),
-            ("SoftIRQ", "proc_stat_cpu_softirq_time_pct"),
-            ("Steal", "proc_stat_cpu_steal_time_pct"),
-            ("Guest", "proc_stat_cpu_guest_time_pct"),
-            ("GuestNice", "proc_stat_cpu_guest_nice_time_pct"),
+        for field, metric_type in [
+            ("User", "user"),
+            ("Nice", "nice"),
+            ("System", "system"),
+            ("Idle", "idle"),
+            ("Iowait", "iowait"),
+            ("IRQ", "irq"),
+            ("SoftIRQ", "softirq"),
+            ("Steal", "steal"),
+            ("Guest", "guest"),
+            ("GuestNice", "guest_nice"),
         ]:
             val = cpu_stat.get_field(field)
             prev_val = prev_cpu_stat.get_field(field)
@@ -91,7 +91,7 @@ def proc_stat_pcpu_metrics(
                 continue
             metrics.append(
                 Metric(
-                    metric=f'{metric_name}{{hostname="{_hostname}",job="{_job}",cpu="{cpu}"}}',
+                    metric=f'proc_stat_cpu_time_pct{{hostname="{_hostname}",job="{_job}",cpu="{cpu}",type="{metric_type}"}}',
                     val=(val - prev_val) / delta_seconds * 100.0,
                     ts=ts,
                     valfmt=".02f",
