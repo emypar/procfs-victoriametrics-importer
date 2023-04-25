@@ -158,7 +158,7 @@ func NewProcStatMetricsContext(
 
 func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 	procStatMetricsCtx := mGenCtx.(*ProcStatMetricsContext)
-	stat, err := procStatMetricsCtx.fs.Stat()
+	stat, err := procStatMetricsCtx.fs.StatOptionalIRQ(true)
 	if err != nil {
 		ProcStatMetricsLog.Warn(err)
 		return

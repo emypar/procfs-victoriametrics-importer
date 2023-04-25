@@ -121,7 +121,7 @@ def make_delta_psmtc(
             continue
         prev_proc_stat = deepcopy(proc_stat)
         prev_proc_stat._ts = prev_ts
-        prev_val = val - 1
+        prev_val = val - min(val, 1)
         prev_proc_stat.set_field(field_spec, prev_val)
         prev_full_metrics = proc_stat_metrics.generate_all_metrics(prev_proc_stat)
         # Choose a refresh cycle such that this field is not due for change:

@@ -164,21 +164,25 @@ func (fs FS) NewStat() (Stat, error) {
 
 // Stat returns information about current cpu/process statistics.
 // See: https://www.kernel.org/doc/Documentation/filesystems/proc.txt
-func (fs FS) Stat() (Stat, error) {
+func (fs FS) StatOptionalIRQ(excludeIRQDetails bool) (Stat, error) {
 	fileName := fs.proc.Path("stat")
 	data, err := util.ReadFileNoStat(fileName)
 	if err != nil {
 		return Stat{}, err
 	}
-	procStat, err := parseStat(bytes.NewReader(data), fileName)
+	procStat, err := parseStat(bytes.NewReader(data), fileName, excludeIRQDetails)
 	if err != nil {
 		return Stat{}, err
 	}
 	return procStat, nil
 }
 
-// parseStat parses the metrics from /proc/[pid]/stat.
-func parseStat(r io.Reader, fileName string) (Stat, error) {
+func (fs FS) Stat() (Stat, error) {
+	return fs.StatOptionalIRQ(false)
+}
+
+// parseStat parses the metrics from /proc/stat.
+func parseStat(r io.Reader, fileName string, excludeIRQDetails bool) (Stat, error) {
 	var (
 		scanner = bufio.NewScanner(r)
 		stat    = Stat{
@@ -189,6 +193,26 @@ func parseStat(r io.Reader, fileName string) (Stat, error) {
 
 	for scanner.Scan() {
 		line := scanner.Text()
+		if excludeIRQDetails && strings.HasPrefix(line, "intr") {
+			n, err := fmt.Sscanf(line, "intr%d", &stat.IRQTotal)
+			if err != nil || n != 1 {
+				n := len(line)
+				dotdotdot := ""
+				if n > 100 {
+					n = 100
+					dotdotdot = "..."
+				}
+				return Stat{}, fmt.Errorf("couldn't parse %q: %w", line[:n]+dotdotdot, err)
+			}
+			continue
+		}
+		if excludeIRQDetails && strings.HasPrefix(line, "softirq") {
+			n, err := fmt.Sscanf(line, "softirq%d", &stat.SoftIRQTotal)
+			if err != nil || n != 1 {
+				return Stat{}, fmt.Errorf("couldn't parse %q: %w", line, err)
+			}
+			continue
+		}
 		parts := strings.Fields(scanner.Text())
 		// require at least <key> <value>
 		if len(parts) < 2 {

@@ -3,6 +3,7 @@ testdata/
 tests/testdata/
 bin/
 c/
+vendor.org/
 
 # Editors and IDE:
 \#*
