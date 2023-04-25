@@ -3,11 +3,8 @@
 package pvmi
 
 import (
-	"bufio"
 	"bytes"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/prometheus/procfs"
 )
@@ -35,7 +32,7 @@ func updateProcPidCgroupMetric(
 	buf *bytes.Buffer,
 	generatedCount *uint64,
 ) error {
-	cgroups, err := parseCgroups(rawCgroup)
+	cgroups, err := procfs.ParseCgroups(rawCgroup)
 	if err != nil {
 		return err
 	}
@@ -70,48 +67,4 @@ func updateProcPidCgroupMetric(
 		*generatedCount += gCnt
 	}
 	return nil
-}
-
-// from "github.com/prometheus/procfs", parse cgroups from data, rather than proc
-
-// parseCgroupString parses each line of the /proc/[pid]/cgroup file
-// Line format is hierarchyID:[controller1,controller2]:path.
-func parseCgroupString(cgroupStr string) (*procfs.Cgroup, error) {
-	var err error
-
-	fields := strings.SplitN(cgroupStr, ":", 3)
-	if len(fields) < 3 {
-		return nil, fmt.Errorf("at least 3 fields required, found %d fields in cgroup string: %s", len(fields), cgroupStr)
-	}
-
-	cgroup := &procfs.Cgroup{
-		Path:        fields[2],
-		Controllers: nil,
-	}
-	cgroup.HierarchyID, err = strconv.Atoi(fields[0])
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse hierarchy ID")
-	}
-	if fields[1] != "" {
-		ssNames := strings.Split(fields[1], ",")
-		cgroup.Controllers = append(cgroup.Controllers, ssNames...)
-	}
-	return cgroup, nil
-}
-
-// parseCgroups reads each line of the /proc/[pid]/cgroup file.
-func parseCgroups(data []byte) ([]procfs.Cgroup, error) {
-	var cgroups []procfs.Cgroup
-	scanner := bufio.NewScanner(bytes.NewReader(data))
-	for scanner.Scan() {
-		mountString := scanner.Text()
-		parsedMounts, err := parseCgroupString(mountString)
-		if err != nil {
-			return nil, err
-		}
-		cgroups = append(cgroups, *parsedMounts)
-	}
-
-	err := scanner.Err()
-	return cgroups, err
 }

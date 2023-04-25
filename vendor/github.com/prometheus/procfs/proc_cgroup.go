@@ -86,6 +86,8 @@ func parseCgroups(data []byte) ([]Cgroup, error) {
 	return cgroups, err
 }
 
+var ParseCgroups = parseCgroups // public entry
+
 // Cgroups reads from /proc/<pid>/cgroups and returns a []*Cgroup struct locating this PID in each process
 // control hierarchy running on this system. On every system (v1 and v2), all hierarchies contain all processes,
 // so the len of the returned struct is equal to the number of active hierarchies on this system.
