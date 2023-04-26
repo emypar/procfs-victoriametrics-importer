@@ -47,7 +47,7 @@ var ProcStatMetricsLog = Log.WithField(
 	"ProcStatMetrics",
 )
 
-// The context for pid metrics generation:
+// The context for proc stat metrics generation:
 type ProcStatMetricsContext struct {
 	// Interval, needed to qualify as a MetricsGenContext
 	interval time.Duration
@@ -323,7 +323,7 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 var ProcStatMetricsScanIntervalArg = flag.Float64(
 	"proc-stat-metrics-scan-interval",
 	DEFAULT_PROC_STAT_METRICS_SCAN_INTERVAL,
-	`Proc stat metrics interval in seconds, use 0 to disable.`,
+	`proc_stat metrics interval in seconds, use 0 to disable.`,
 )
 
 var ProcStatMetricsFullMetricsIntervalArg = flag.Float64(
@@ -365,11 +365,11 @@ func BuildProcStatMetricsCtxFromArgs() (*ProcStatMetricsContext, error) {
 	if err != nil {
 		return nil, err
 	}
-	ProcStatMetricsLog.Infof("proc_stat_metrics: interval=%s", interval)
-	ProcStatMetricsLog.Infof("proc_stat_metrics: procfsRoot=%s", GlobalProcfsRoot)
-	ProcStatMetricsLog.Infof("proc_stat_metrics: hostname=%s", GlobalMetricsHostname)
-	ProcStatMetricsLog.Infof("proc_stat_metrics: job=%s", GlobalMetricsJob)
-	ProcStatMetricsLog.Infof("proc_stat_metrics: clktckSec=%f", ClktckSec)
+	ProcStatMetricsLog.Infof("proc_stat metrics: interval=%s", interval)
+	ProcStatMetricsLog.Infof("proc_stat metrics: procfsRoot=%s", GlobalProcfsRoot)
+	ProcStatMetricsLog.Infof("proc_stat metrics: hostname=%s", GlobalMetricsHostname)
+	ProcStatMetricsLog.Infof("proc_stat metrics: job=%s", GlobalMetricsJob)
+	ProcStatMetricsLog.Infof("proc_stat metrics: clktckSec=%f", ClktckSec)
 	return procStatMetricsCtx, nil
 }
 
@@ -381,7 +381,7 @@ func StartProcStatMetricsFromArgs() error {
 		return err
 	}
 	if procStatMetricsCtx == nil {
-		ProcStatMetricsLog.Warn("Proc stat metrics collection disabled")
+		ProcStatMetricsLog.Warn("proc_stat metrics collection disabled")
 		return nil
 	}
 

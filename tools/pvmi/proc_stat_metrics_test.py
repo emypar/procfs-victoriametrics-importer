@@ -164,14 +164,14 @@ def generate_test_case_files(
     test_case_dir: str = TestdataTestCasesDir,
 ):
     psmtc_list = []
-    psmtc_list.append(load_psmtc(name="full"))
-    psmtc_list.extend(make_refresh_psmtc(name="refresh-cycle"))
+    psmtc_list.append(load_psmtc(name="full", procfs_root=procfs_root))
+    psmtc_list.extend(make_refresh_psmtc(name="refresh-cycle", procfs_root=procfs_root))
     save_to_json_file(
         [psmtc.to_json_compat() for psmtc in psmtc_list],
         os.path.join(test_case_dir, PROC_STAT_METRICS_TEST_CASES_FILE_NAME),
     )
 
-    psmtc_list = make_delta_psmtc(name="delta")
+    psmtc_list = make_delta_psmtc(name="delta", procfs_root=procfs_root)
     save_to_json_file(
         [psmtc.to_json_compat() for psmtc in psmtc_list],
         os.path.join(test_case_dir, PROC_STAT_METRICS_DELTA_TEST_CASES_FILE_NAME),

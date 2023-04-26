@@ -25,7 +25,7 @@ def proc_stat_cpu_metrics(
     if ts is None:
         ts = proc_stat._ts
     for cpu, cpu_stat in cpu_stat_map.items():
-        for field, metric_type in [
+        for field, cpu_time_type in [
             ("User", "user"),
             ("Nice", "nice"),
             ("System", "system"),
@@ -40,7 +40,7 @@ def proc_stat_cpu_metrics(
             val = cpu_stat.get_field(field)
             metrics.append(
                 Metric(
-                    metric=f'proc_stat_cpu_time_seconds{{hostname="{_hostname}",job="{_job}",cpu="{cpu}",type="{metric_type}"}}',
+                    metric=f'proc_stat_cpu_time_seconds{{hostname="{_hostname}",job="{_job}",cpu="{cpu}",type="{cpu_time_type}"}}',
                     val=val,
                     ts=ts,
                     valfmt=".06f",
@@ -73,7 +73,7 @@ def proc_stat_pcpu_metrics(
     for cpu in cpu_stat_map:
         cpu_stat = cpu_stat_map[cpu]
         prev_cpu_stat = prev_cpu_stat_map[cpu]
-        for field, metric_type in [
+        for field, cpu_time_type in [
             ("User", "user"),
             ("Nice", "nice"),
             ("System", "system"),
@@ -91,7 +91,7 @@ def proc_stat_pcpu_metrics(
                 continue
             metrics.append(
                 Metric(
-                    metric=f'proc_stat_cpu_time_pct{{hostname="{_hostname}",job="{_job}",cpu="{cpu}",type="{metric_type}"}}',
+                    metric=f'proc_stat_cpu_time_pct{{hostname="{_hostname}",job="{_job}",cpu="{cpu}",type="{cpu_time_type}"}}',
                     val=(val - prev_val) / delta_seconds * 100.0,
                     ts=ts,
                     valfmt=".02f",

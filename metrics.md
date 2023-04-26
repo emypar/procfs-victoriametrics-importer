@@ -175,3 +175,29 @@ Parser: [stat.go](https://github.com/prometheus/procfs/blob/master/stat.go)
 | proc_stat_process_created_count | hostname=_hostname_<br>job=_job_<br> | Counter | |
 | proc_stat_process_running_count | hostname=_hostname_<br>job=_job_<br> | Gauge | |
 | proc_stat_process_blocked_count | hostname=_hostname_<br>job=_job_<br> | Gauge | |
+
+### proc_net_dev_\*
+
+Source: `/proc/net/dev`
+
+Parser: [net_dev.go](https://github.com/prometheus/procfs/blob/master/net_dev.go)
+
+| Metric | Labels | Value | Obs |
+| ------ | ------ | ----- | --- |
+| proc_net_dev_rx_bytes_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_rx_packets_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_rx_errors_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_rx_dropped_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_rx_fifo_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_rx_frame_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_rx_compressed_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_rx_multicast_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_tx_bytes_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_tx_packets_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_tx_errors_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_tx_dropped_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_tx_fifo_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_tx_collisions_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_tx_carrier_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_tx_compressed_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+

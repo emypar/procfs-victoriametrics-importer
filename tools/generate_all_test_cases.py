@@ -3,7 +3,12 @@
 import argparse
 
 from metrics_common_test import TestdataProcfsRoot, TestdataTestCasesDir
-from pvmi import pid_list_test, proc_pid_metrics_test, proc_stat_metrics_test
+from pvmi import (
+    pid_list_test,
+    proc_net_dev_metrics_test,
+    proc_pid_metrics_test,
+    proc_stat_metrics_test,
+)
 
 gtc_map = {
     m.__name__.split(".")[-1].replace("_test", ""): m.generate_test_case_files
@@ -11,6 +16,7 @@ gtc_map = {
         pid_list_test,
         proc_pid_metrics_test,
         proc_stat_metrics_test,
+        proc_net_dev_metrics_test,
     ]
 }
 
