@@ -14,7 +14,7 @@ Examples:
 
 All metrics will have the following labels:
 
-| Label | Default Value | Command Arg |
+| Label | Default Type | Command Arg |
 | ----- | ------------- | ----------- |
 | `hostname`| os hostname | `--metrics-hostname`<br>`-metrics-use-short-hostname` |
 | `job` | `pvmi` | `-metrics-job` |
@@ -50,7 +50,7 @@ Source: `/proc/buddyinfo`
 
 Parser: [buddyinfo.go](https://github.com/prometheus/procfs/blob/master/buddyinfo.go)
 
-| Metric | Labels | Value | Obs |
+| Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
 | proc_buddyinfo_count | equinode=_node_<br>zone=_zone_<br>index=_index_ | Counter | |
 
@@ -66,7 +66,7 @@ Parser: [proc_cgroup.go](https://github.com/prometheus/procfs/blob/master/proc_c
 
 Reference: [man cgroups](https://man7.org/linux/man-pages/man7/cgroups.7.html), see `/proc/[pid]/cgroup`
 
-| Metric | Labels | Value | Obs |
+| Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
 | proc_pid_cgroup | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>hierarchy_id=_id_<br>controller=_controller_<br> path=_path_ | 0/1 | pseudo-categorical |
 
@@ -77,7 +77,7 @@ Reference: [man cgroups](https://man7.org/linux/man-pages/man7/cgroups.7.html), 
 Source: `/proc/PID/cmdline` or `/proc/PID/task/TID/cmdline`
 
 
-| Metric | Labels | Value | Obs |
+| Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
 | proc_pid_cmdline | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>cmdline=_cmdline_ | 0/1 | The command line string, with `\0` (null) replaced by `' '` (space).<br>pseudo-categorical |
 
@@ -88,7 +88,7 @@ Source: `/proc/PID/io` or `/proc/PID/task/TID/io`
 
 Parser: [proc_io.go](https://github.com/prometheus/procfs/blob/master/proc_io.go)
 
-| Metric | Labels | Value | Obs |
+| Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
 | proc_pid_io_rcar | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
 | proc_pid_io_wcar | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
@@ -105,7 +105,7 @@ Source: `/proc/PID/stat` or `/proc/PID/task/TID/stat`
 Parser: [proc_stat.go](https://github.com/prometheus/procfs/blob/master/proc_stat.go)
 
 
-| Metric | Labels | Value | Obs |
+| Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
 | proc_pid_stat_state | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>state=`R\|S\|D\|...` | 0/1 | pseudo-categorical |
 | proc_pid_stat_info | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>comm=_comm_<br>ppid=_ppid_<br>pgrp=_pgrp_<br>session=_session_<br>tty_nr=*tty_nr*<br>tpgid=_tpgid_<br>flags=*pf_flags*<br>priority=_priority_<br>nice=_nice_<br>rt_priority=*rt_priority*<br>policy=_policy_ | 0/1 | Information associated w/ a process/thread that may change but it is unlikely to do so for the lifespan of a process<br><br>pseudo-categorical |
@@ -133,7 +133,7 @@ Source: `/proc/PID/status` or `/proc/PID/task/TID/status`
 Parser: [proc_status.go](https://github.com/prometheus/procfs/blob/master/proc_status.go)
 
 
-| Metric | Labels | Value | Obs |
+| Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
 | proc_pid_status_info | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>name=_name_<br>tgid=_tgid_<br>real_uid=_uid_<br>effective_uid=_uid_<br>saved_uid=_uid_<br>filesystem_uid=_uid_<br>real_gid=_gid_<br>effective_gid=_gid_<br>saved_gid=_gid_<br>filesystem_gid=_gid_ | 0/1 | Information associated w/ a process/thread that may change but it is unlikely to do so for the lifespan of a process<br><br>pseudo-categorical |
 | proc_pid_status_vm_peak | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
@@ -164,7 +164,7 @@ Source: `/proc/stat`
 
 Parser: [stat.go](https://github.com/prometheus/procfs/blob/master/stat.go)
 
-| Metric | Labels | Value | Obs |
+| Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
 | proc_stat_cpu_time_seconds | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br>type=user\|nice\|system\|idle\|iowait\|irq\|softirq\|steal\|guest\|guest_nice |  | The value read from file divided by `sysconf(_SC_CLK_TCK) |
 | proc_stat_cpu_time_pct | hostname=_hostname_<br>job=_job_<br><br>cpu=_cpu_\|all<br>type=user\|nice\|system\|idle\|iowait\|irq\|softirq\|steal\|guest\|guest_nice |  |  |
@@ -182,22 +182,16 @@ Source: `/proc/net/dev`
 
 Parser: [net_dev.go](https://github.com/prometheus/procfs/blob/master/net_dev.go)
 
-| Metric | Labels | Value | Obs |
+| Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
-| proc_net_dev_rx_bytes_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_rx_packets_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_rx_errors_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_rx_dropped_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_rx_fifo_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_rx_frame_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_rx_compressed_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_rx_multicast_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_tx_bytes_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_tx_packets_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_tx_errors_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_tx_dropped_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_tx_fifo_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_tx_collisions_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_tx_carrier_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
-| proc_net_dev_tx_compressed_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_ | Counter | |
+| proc_net_dev_bytes_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_packets_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_errors_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_dropped_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_fifo_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_frame_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx | Counter | |
+| proc_net_dev_compressed_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_multicast_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx | Counter | |
+| proc_net_dev_collisions_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=tx | Counter | |
+| proc_net_dev_carrier_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=tx | Counter | |
 

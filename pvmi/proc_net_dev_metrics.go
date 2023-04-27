@@ -14,23 +14,20 @@ import (
 )
 
 const (
-	PROC_NET_DEV_RX_BYTES_METRIC_NAME      = "proc_net_dev_rx_bytes_total"
-	PROC_NET_DEV_RX_PACKETS_METRIC_NAME    = "proc_net_dev_rx_packets_total"
-	PROC_NET_DEV_RX_ERRORS_METRIC_NAME     = "proc_net_dev_rx_errors_total"
-	PROC_NET_DEV_RX_DROPPED_METRIC_NAME    = "proc_net_dev_rx_dropped_total"
-	PROC_NET_DEV_RX_FIFO_METRIC_NAME       = "proc_net_dev_rx_fifo_total"
-	PROC_NET_DEV_RX_FRAME_METRIC_NAME      = "proc_net_dev_rx_frame_total"
-	PROC_NET_DEV_RX_COMPRESSED_METRIC_NAME = "proc_net_dev_rx_compressed_total"
-	PROC_NET_DEV_RX_MULTICAST_METRIC_NAME  = "proc_net_dev_rx_multicast_total"
-	PROC_NET_DEV_TX_BYTES_METRIC_NAME      = "proc_net_dev_tx_bytes_total"
-	PROC_NET_DEV_TX_PACKETS_METRIC_NAME    = "proc_net_dev_tx_packets_total"
-	PROC_NET_DEV_TX_ERRORS_METRIC_NAME     = "proc_net_dev_tx_errors_total"
-	PROC_NET_DEV_TX_DROPPED_METRIC_NAME    = "proc_net_dev_tx_dropped_total"
-	PROC_NET_DEV_TX_FIFO_METRIC_NAME       = "proc_net_dev_tx_fifo_total"
-	PROC_NET_DEV_TX_COLLISIONS_METRIC_NAME = "proc_net_dev_tx_collisions_total"
-	PROC_NET_DEV_TX_CARRIER_METRIC_NAME    = "proc_net_dev_tx_carrier_total"
-	PROC_NET_DEV_TX_COMPRESSED_METRIC_NAME = "proc_net_dev_tx_compressed_total"
-	PROC_NET_DEV_DEVICE_LABEL_NAME         = "device"
+	PROC_NET_DEV_BYTES_METRIC_NAME      = "proc_net_dev_bytes_total"
+	PROC_NET_DEV_PACKETS_METRIC_NAME    = "proc_net_dev_packets_total"
+	PROC_NET_DEV_ERRORS_METRIC_NAME     = "proc_net_dev_errors_total"
+	PROC_NET_DEV_DROPPED_METRIC_NAME    = "proc_net_dev_dropped_total"
+	PROC_NET_DEV_FIFO_METRIC_NAME       = "proc_net_dev_fifo_total"
+	PROC_NET_DEV_FRAME_METRIC_NAME      = "proc_net_dev_frame_total"
+	PROC_NET_DEV_COMPRESSED_METRIC_NAME = "proc_net_dev_compressed_total"
+	PROC_NET_DEV_MULTICAST_METRIC_NAME  = "proc_net_dev_multicast_total"
+	PROC_NET_DEV_COLLISIONS_METRIC_NAME = "proc_net_dev_collisions_total"
+	PROC_NET_DEV_CARRIER_METRIC_NAME    = "proc_net_dev_carrier_total"
+	PROC_NET_DEV_DEVICE_LABEL_NAME      = "device"
+	PROC_NET_DEV_SIDE_LABEL_NAME        = "side"
+	PROC_NET_DEV_SIDE_RX_LABEL_VALUE    = "rx"
+	PROC_NET_DEV_SIDE_TX_LABEL_VALUE    = "tx"
 
 	DEFAULT_PROC_NET_DEV_METRICS_SCAN_INTERVAL         = 1  // seconds
 	DEFAULT_PROC_NET_DEV_METRICS_FULL_METRICS_INTERVAL = 15 // seconds
@@ -119,8 +116,8 @@ func NewProcNetDevMetricsContext(
 		nextRefreshGroupNum: 0,
 		fs:                  fs,
 		counterMetricFmt: fmt.Sprintf(
-			`%%s{%s="%s",%s="%s",%s="%%s"} %%d %%s`+"\n",
-			HOSTNAME_LABEL_NAME, hostname, JOB_LABEL_NAME, job, PROC_NET_DEV_DEVICE_LABEL_NAME,
+			`%%s{%s="%s",%s="%s",%s="%%s",%s="%%s"} %%d %%s`+"\n",
+			HOSTNAME_LABEL_NAME, hostname, JOB_LABEL_NAME, job, PROC_NET_DEV_DEVICE_LABEL_NAME, PROC_NET_DEV_SIDE_LABEL_NAME,
 		),
 		wChan:    wChan,
 		hostname: hostname,
@@ -167,52 +164,52 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 			}
 		}
 		if fullMetrics || prevNetDevLine.RxBytes != netDevLine.RxBytes {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_RX_BYTES_METRIC_NAME, device, netDevLine.RxBytes, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_BYTES_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxBytes, promTs)
 		}
 		if fullMetrics || prevNetDevLine.RxPackets != netDevLine.RxPackets {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_RX_PACKETS_METRIC_NAME, device, netDevLine.RxPackets, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxPackets, promTs)
 		}
 		if fullMetrics || prevNetDevLine.RxErrors != netDevLine.RxErrors {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_RX_ERRORS_METRIC_NAME, device, netDevLine.RxErrors, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_ERRORS_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxErrors, promTs)
 		}
 		if fullMetrics || prevNetDevLine.RxDropped != netDevLine.RxDropped {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_RX_DROPPED_METRIC_NAME, device, netDevLine.RxDropped, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_DROPPED_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxDropped, promTs)
 		}
 		if fullMetrics || prevNetDevLine.RxFIFO != netDevLine.RxFIFO {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_RX_FIFO_METRIC_NAME, device, netDevLine.RxFIFO, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_FIFO_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxFIFO, promTs)
 		}
 		if fullMetrics || prevNetDevLine.RxFrame != netDevLine.RxFrame {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_RX_FRAME_METRIC_NAME, device, netDevLine.RxFrame, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_FRAME_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxFrame, promTs)
 		}
 		if fullMetrics || prevNetDevLine.RxCompressed != netDevLine.RxCompressed {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_RX_COMPRESSED_METRIC_NAME, device, netDevLine.RxCompressed, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_COMPRESSED_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxCompressed, promTs)
 		}
 		if fullMetrics || prevNetDevLine.RxMulticast != netDevLine.RxMulticast {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_RX_MULTICAST_METRIC_NAME, device, netDevLine.RxMulticast, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_MULTICAST_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxMulticast, promTs)
 		}
 		if fullMetrics || prevNetDevLine.TxBytes != netDevLine.TxBytes {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_TX_BYTES_METRIC_NAME, device, netDevLine.TxBytes, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_BYTES_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxBytes, promTs)
 		}
 		if fullMetrics || prevNetDevLine.TxPackets != netDevLine.TxPackets {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_TX_PACKETS_METRIC_NAME, device, netDevLine.TxPackets, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxPackets, promTs)
 		}
 		if fullMetrics || prevNetDevLine.TxErrors != netDevLine.TxErrors {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_TX_ERRORS_METRIC_NAME, device, netDevLine.TxErrors, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_ERRORS_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxErrors, promTs)
 		}
 		if fullMetrics || prevNetDevLine.TxDropped != netDevLine.TxDropped {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_TX_DROPPED_METRIC_NAME, device, netDevLine.TxDropped, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_DROPPED_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxDropped, promTs)
 		}
 		if fullMetrics || prevNetDevLine.TxFIFO != netDevLine.TxFIFO {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_TX_FIFO_METRIC_NAME, device, netDevLine.TxFIFO, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_FIFO_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxFIFO, promTs)
 		}
 		if fullMetrics || prevNetDevLine.TxCollisions != netDevLine.TxCollisions {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_TX_COLLISIONS_METRIC_NAME, device, netDevLine.TxCollisions, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_COLLISIONS_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxCollisions, promTs)
 		}
 		if fullMetrics || prevNetDevLine.TxCarrier != netDevLine.TxCarrier {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_TX_CARRIER_METRIC_NAME, device, netDevLine.TxCarrier, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_CARRIER_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxCarrier, promTs)
 		}
 		if fullMetrics || prevNetDevLine.TxCompressed != netDevLine.TxCompressed {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_TX_COMPRESSED_METRIC_NAME, device, netDevLine.TxCompressed, promTs)
+			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_COMPRESSED_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxCompressed, promTs)
 		}
 	}
 	if buf.Len() > 0 && wChan != nil {

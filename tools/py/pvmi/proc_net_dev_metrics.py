@@ -22,27 +22,27 @@ def proc_net_dev_line_metrics(
         ts = net_dev_line._ts
     metrics = []
     device = net_dev_line.name
-    for metric_name, field_spec in [
-        ("proc_net_dev_rx_bytes_total", "rx_bytes"),
-        ("proc_net_dev_rx_packets_total", "rx_packets"),
-        ("proc_net_dev_rx_errors_total", "rx_errors"),
-        ("proc_net_dev_rx_dropped_total", "rx_dropped"),
-        ("proc_net_dev_rx_fifo_total", "rx_fifo"),
-        ("proc_net_dev_rx_frame_total", "rx_frame"),
-        ("proc_net_dev_rx_compressed_total", "rx_compressed"),
-        ("proc_net_dev_rx_multicast_total", "rx_multicast"),
-        ("proc_net_dev_tx_bytes_total", "tx_bytes"),
-        ("proc_net_dev_tx_packets_total", "tx_packets"),
-        ("proc_net_dev_tx_errors_total", "tx_errors"),
-        ("proc_net_dev_tx_dropped_total", "tx_dropped"),
-        ("proc_net_dev_tx_fifo_total", "tx_fifo"),
-        ("proc_net_dev_tx_collisions_total", "tx_collisions"),
-        ("proc_net_dev_tx_carrier_total", "tx_carrier"),
-        ("proc_net_dev_tx_compressed_total", "tx_compressed"),
+    for metric_name, field_spec, side, in [
+        ("proc_net_dev_bytes_total", "rx_bytes", "rx"),
+        ("proc_net_dev_packets_total", "rx_packets", "rx"),
+        ("proc_net_dev_errors_total", "rx_errors", "rx"),
+        ("proc_net_dev_dropped_total", "rx_dropped", "rx"),
+        ("proc_net_dev_fifo_total", "rx_fifo", "rx"),
+        ("proc_net_dev_frame_total", "rx_frame", "rx"),
+        ("proc_net_dev_compressed_total", "rx_compressed", "rx"),
+        ("proc_net_dev_multicast_total", "rx_multicast", "rx"),
+        ("proc_net_dev_bytes_total", "tx_bytes", "tx"),
+        ("proc_net_dev_packets_total", "tx_packets", "tx"),
+        ("proc_net_dev_errors_total", "tx_errors", "tx"),
+        ("proc_net_dev_dropped_total", "tx_dropped", "tx"),
+        ("proc_net_dev_fifo_total", "tx_fifo", "tx"),
+        ("proc_net_dev_collisions_total", "tx_collisions", "tx"),
+        ("proc_net_dev_carrier_total", "tx_carrier", "tx"),
+        ("proc_net_dev_compressed_total", "tx_compressed", "tx"),
     ]:
         metrics.append(
             Metric(
-                metric=f'{metric_name}{{hostname="{_hostname}",job="{_job}",device="{device}"}}',
+                metric=f'{metric_name}{{hostname="{_hostname}",job="{_job}",device="{device}",side="{side}"}}',
                 val=net_dev_line.get_field(field_spec),
                 ts=ts,
             )
