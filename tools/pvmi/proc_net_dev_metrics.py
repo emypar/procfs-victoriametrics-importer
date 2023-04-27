@@ -57,13 +57,12 @@ def proc_net_dev_metrics(
     _hostname: str = TestHostname,
     _job: str = TestJob,
 ) -> List[Metric]:
-    if ts is None:
-        ts = net_dev._ts
     metrics = []
-    for net_dev_line in net_dev.net_dev_lines:
-        metrics.extend(
-            proc_net_dev_line_metrics(
-                net_dev_line, ts=ts, _hostname=_hostname, _job=_job
+    for net_dev_line in net_dev.values():
+        if isinstance(net_dev_line, procfs.NetDevLine):
+            metrics.extend(
+                proc_net_dev_line_metrics(
+                    net_dev_line, ts=ts, _hostname=_hostname, _job=_job
+                )
             )
-        )
     return metrics

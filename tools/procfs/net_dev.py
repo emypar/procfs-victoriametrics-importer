@@ -7,7 +7,7 @@ import dataclasses
 import os
 import sys
 import time
-from typing import Optional
+from typing import Dict, Optional, Union
 
 from metrics_common_test import TestdataProcfsRoot
 from tools_common import ts_to_prometheus_ts
@@ -37,16 +37,7 @@ class NetDevLine(ProcfsStructBase):
     tx_compressed: int = 0
 
 
-class NetDev:
-    def __init__(self, _ts: Optional[int] = None):
-        self._ts = _ts
-        self.net_dev_lines = []
-
-    def to_json_compat(self, ignore_none: bool = True):
-        return {
-            net_dev_line.name: net_dev_line.to_json_compat()
-            for net_dev_line in self.net_dev_lines
-        }
+NetDev = Dict[str, Union[int, NetDevLine]]
 
 
 def load_net_dev(
@@ -54,8 +45,10 @@ def load_net_dev(
     _use_ts_from_file: bool = True,
 ) -> Optional[NetDev]:
     net_dev_path = os.path.join(procfs_root, "net/dev")
-    ts = os.stat(net_dev_path).st_mtime if _use_ts_from_file else time.time()
-    net_dev = NetDev(_ts=ts_to_prometheus_ts(ts))
+    ts = ts_to_prometheus_ts(
+        os.stat(net_dev_path).st_mtime if _use_ts_from_file else time.time()
+    )
+    net_dev = dict()
     with open(net_dev_path, "rt") as f:
         n_line = 0
         for line in f:
@@ -69,26 +62,24 @@ def load_net_dev(
                 return None
             name = line[:i].strip()
             counters = [int(v) for v in line[i + 1 :].split()]
-            net_dev.net_dev_lines.append(
-                NetDevLine(
-                    _ts=net_dev._ts,
-                    name=name,
-                    rx_bytes=counters[0],
-                    rx_packets=counters[1],
-                    rx_errors=counters[2],
-                    rx_dropped=counters[3],
-                    rx_fifo=counters[4],
-                    rx_frame=counters[5],
-                    rx_compressed=counters[6],
-                    rx_multicast=counters[7],
-                    tx_bytes=counters[8],
-                    tx_packets=counters[9],
-                    tx_errors=counters[10],
-                    tx_dropped=counters[11],
-                    tx_fifo=counters[12],
-                    tx_collisions=counters[13],
-                    tx_carrier=counters[14],
-                    tx_compressed=counters[15],
-                )
+            net_dev[name] = NetDevLine(
+                _ts=ts,
+                name=name,
+                rx_bytes=counters[0],
+                rx_packets=counters[1],
+                rx_errors=counters[2],
+                rx_dropped=counters[3],
+                rx_fifo=counters[4],
+                rx_frame=counters[5],
+                rx_compressed=counters[6],
+                rx_multicast=counters[7],
+                tx_bytes=counters[8],
+                tx_packets=counters[9],
+                tx_errors=counters[10],
+                tx_dropped=counters[11],
+                tx_fifo=counters[12],
+                tx_collisions=counters[13],
+                tx_carrier=counters[14],
+                tx_compressed=counters[15],
             )
     return net_dev
