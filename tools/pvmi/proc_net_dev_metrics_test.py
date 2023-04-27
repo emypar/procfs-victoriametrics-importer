@@ -2,9 +2,9 @@
 
 # support for pvmi/proc_net_dev_metrics_test.go
 
-from copy import deepcopy
 import dataclasses
 import os
+from copy import deepcopy
 from typing import Dict, List, Optional
 
 import procfs
@@ -21,6 +21,7 @@ PROC_NET_DEV_METRICS_DELTA_TEST_CASES_FILE_NAME = (
 )
 PROC_NET_DEV_METRICS_DELTA_INTERVAL = 1000  # milliseconds (Prometheus)
 PROC_NET_DEV_REMOVED_DEVICE_NAME = "__removed__"
+
 
 @dataclasses.dataclass
 class ProcNetDevMetricsTestCase(StructBase):
@@ -82,19 +83,22 @@ def make_full_refresh_pndtc(
         break
     device_list = sorted(proc_net_dev)
     want_next_refresh_group_num = len(proc_net_dev)
-    for full_metrics_factor in range(2, len(proc_net_dev)+2):
-        refresh_group_num = {device: i % full_metrics_factor for (i, device) in enumerate(device_list)}
+    for full_metrics_factor in range(2, len(proc_net_dev) + 2):
+        refresh_group_num = {
+            device: i % full_metrics_factor for (i, device) in enumerate(device_list)
+        }
         want_next_refresh_group_num = len(refresh_group_num) % full_metrics_factor
         for refresh_cycle_num in range(full_metrics_factor):
             refresh_device_list = [
-                device for device in device_list
+                device
+                for device in device_list
                 if refresh_group_num[device] == refresh_cycle_num
             ]
             want_metrics = []
             for device in refresh_device_list:
-                want_metrics.extend(proc_net_dev_metrics.proc_net_dev_line_metrics(
-                    proc_net_dev[device]
-                ))
+                want_metrics.extend(
+                    proc_net_dev_metrics.proc_net_dev_line_metrics(proc_net_dev[device])
+                )
             tc = ProcNetDevMetricsTestCase(
                 Name=f'{name}:{"+".join(refresh_device_list)}',
                 ProcfsRoot=rel_path_to_file(procfs_root),
@@ -113,10 +117,11 @@ def make_full_refresh_pndtc(
             pndtc_list.append(tc)
     return pndtc_list
 
+
 def make_removed_device_pndtc(
     name: str = "removed-device",
     proc_net_dev: Optional[procfs.NetDev] = None,
-    procfs_root: str = TestdataProcfsRoot,        
+    procfs_root: str = TestdataProcfsRoot,
 ) -> ProcNetDevMetricsTestCase:
     if proc_net_dev is None:
         proc_net_dev = procfs.load_net_dev(procfs_root=procfs_root)
@@ -153,11 +158,12 @@ def make_removed_device_pndtc(
         WantNextRefreshGroupNum=want_next_refresh_group_num,
     )
     return tc
- 
+
+
 def make_delta_pndtc(
     name: str = "delta",
     proc_net_dev: Optional[procfs.NetDev] = None,
-    procfs_root: str = TestdataProcfsRoot,        
+    procfs_root: str = TestdataProcfsRoot,
 ) -> List[ProcNetDevMetricsTestCase]:
     pndtc_list = []
     if proc_net_dev is None:
@@ -166,9 +172,7 @@ def make_delta_pndtc(
         ts = proc_net_dev_line._ts
         break
     device_list = sorted(proc_net_dev)
-    refresh_group_num = {
-        device: i for (i, device) in enumerate(device_list)
-    }
+    refresh_group_num = {device: i for (i, device) in enumerate(device_list)}
     next_refresh_group_num = len(proc_net_dev)
     # Ensure that no device gets full refresh:
     full_metrics_factor = 2 * len(device_list) + 1
@@ -186,9 +190,9 @@ def make_delta_pndtc(
             prev_proc_net_dev_line._ts = ts - PROC_NET_DEV_METRICS_DELTA_INTERVAL
             prev_proc_net_dev = deepcopy(proc_net_dev)
             prev_proc_net_dev[proc_net_dev_line.name] = prev_proc_net_dev_line
-            want_metrics =  metrics_delta(
+            want_metrics = metrics_delta(
                 proc_net_dev_metrics.proc_net_dev_line_metrics(prev_proc_net_dev_line),
-                proc_net_dev_metrics.proc_net_dev_line_metrics(proc_net_dev_line)
+                proc_net_dev_metrics.proc_net_dev_line_metrics(proc_net_dev_line),
             )
             tc = ProcNetDevMetricsTestCase(
                 Name=f"{name}:{device}:{field_spec}:{prev_val}->{val}",
