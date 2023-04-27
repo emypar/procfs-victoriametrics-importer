@@ -2,8 +2,8 @@
 testdata/
 tests/testdata/
 bin/
-c/
 vendor.org/
+/local
 
 # Editors and IDE:
 \#*

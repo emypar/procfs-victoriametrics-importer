@@ -5,10 +5,10 @@
 import os
 import sys
 
-tools_dir = os.path.dirname(
+py_tools_dir = os.path.dirname(
     os.path.normpath(os.path.abspath(os.path.dirname(__file__)))
 )
-sys.path.extend(tools_dir)
+sys.path.extend(py_tools_dir)
 
 
 from . import pid_list_test
