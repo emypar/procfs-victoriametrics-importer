@@ -14,12 +14,12 @@ import (
 )
 
 const (
-	PROC_INTERRUPT_TOTAL_METRIC_NAME       = "proc_interrupt_total"
-	PROC_INTERRUPT_INFO_METRIC_NAME        = "proc_interrupt_info"
-	PROC_INTERRUPT_IRQ_LABEL_NAME          = "interrupt"
-	PROC_INTERRUPT_TOTAL_CPU_LABEL_NAME    = "cpu"
-	PROC_INTERRUPT_INFO_DEVICES_LABEL_NAME = "devices"
-	PROC_INTERRUPT_INFO_INFO_LABEL_NAME    = "info"
+	PROC_INTERRUPTS_TOTAL_METRIC_NAME       = "proc_interrupts_total"
+	PROC_INTERRUPTS_INFO_METRIC_NAME        = "proc_interrupts_info"
+	PROC_INTERRUPTS_IRQ_LABEL_NAME          = "interrupt"
+	PROC_INTERRUPTS_TOTAL_CPU_LABEL_NAME    = "cpu"
+	PROC_INTERRUPTS_INFO_DEVICES_LABEL_NAME = "devices"
+	PROC_INTERRUPTS_INFO_INFO_LABEL_NAME    = "info"
 
 	DEFAULT_PROC_INTERRUPTS_METRICS_SCAN_INTERVAL         = 1  // seconds
 	DEFAULT_PROC_INTERRUPTS_METRICS_FULL_METRICS_INTERVAL = 15 // seconds
@@ -108,20 +108,20 @@ func NewProcInterruptsMetricsContext(
 		fs:                  fs,
 		counterMetricFmt: fmt.Sprintf(
 			`%s{%s="%s",%s="%s",%s="%%s",%s="%%d"} %%s %%s`+"\n",
-			PROC_INTERRUPT_TOTAL_METRIC_NAME,
+			PROC_INTERRUPTS_TOTAL_METRIC_NAME,
 			HOSTNAME_LABEL_NAME, hostname,
 			JOB_LABEL_NAME, job,
-			PROC_INTERRUPT_IRQ_LABEL_NAME,
-			PROC_INTERRUPT_TOTAL_CPU_LABEL_NAME,
+			PROC_INTERRUPTS_IRQ_LABEL_NAME,
+			PROC_INTERRUPTS_TOTAL_CPU_LABEL_NAME,
 		),
 		infoMetricFmt: fmt.Sprintf(
 			`%s{%s="%s",%s="%s",%s="%%s",%s="%%s",%s="%%s"} %%d %%s`+"\n",
-			PROC_INTERRUPT_INFO_METRIC_NAME,
+			PROC_INTERRUPTS_INFO_METRIC_NAME,
 			HOSTNAME_LABEL_NAME, hostname,
 			JOB_LABEL_NAME, job,
-			PROC_INTERRUPT_IRQ_LABEL_NAME,
-			PROC_INTERRUPT_INFO_DEVICES_LABEL_NAME,
-			PROC_INTERRUPT_INFO_INFO_LABEL_NAME,
+			PROC_INTERRUPTS_IRQ_LABEL_NAME,
+			PROC_INTERRUPTS_INFO_DEVICES_LABEL_NAME,
+			PROC_INTERRUPTS_INFO_INFO_LABEL_NAME,
 		),
 		wChan:    wChan,
 		hostname: hostname,
@@ -244,7 +244,7 @@ func GenerateProcInterruptsMetrics(mGenCtx MetricsGenContext) {
 var ProcInterruptsMetricsScanIntervalArg = flag.Float64(
 	"proc-interrupts-metrics-scan-interval",
 	DEFAULT_PROC_INTERRUPTS_METRICS_SCAN_INTERVAL,
-	`proc_interrupt metrics interval in seconds, use 0 to disable.`,
+	`proc_interrupts metrics interval in seconds, use 0 to disable.`,
 )
 
 var ProcInterruptsMetricsFullMetricsIntervalArg = flag.Float64(
@@ -285,10 +285,10 @@ func BuildProcInterruptsMetricsCtxFromArgs() (*ProcInterruptsMetricsContext, err
 	if err != nil {
 		return nil, err
 	}
-	ProcInterruptsMetricsLog.Infof("proc_interrupt metrics: interval=%s", interval)
-	ProcInterruptsMetricsLog.Infof("proc_interrupt metrics: procfsRoot=%s", GlobalProcfsRoot)
-	ProcInterruptsMetricsLog.Infof("proc_interrupt metrics: hostname=%s", GlobalMetricsHostname)
-	ProcInterruptsMetricsLog.Infof("proc_interrupt metrics: job=%s", GlobalMetricsJob)
+	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: interval=%s", interval)
+	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: procfsRoot=%s", GlobalProcfsRoot)
+	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: hostname=%s", GlobalMetricsHostname)
+	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: job=%s", GlobalMetricsJob)
 	return procInterruptsMetricsCtx, nil
 }
 
@@ -300,7 +300,7 @@ func StartProcInterruptsMetricsFromArgs() error {
 		return err
 	}
 	if procInterruptsMetricsCtx == nil {
-		ProcInterruptsMetricsLog.Warn("proc_interrupt metrics collection disabled")
+		ProcInterruptsMetricsLog.Warn("proc_interrupts metrics collection disabled")
 		return nil
 	}
 

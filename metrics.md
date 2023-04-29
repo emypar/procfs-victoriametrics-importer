@@ -195,7 +195,7 @@ Parser: [net_dev.go](https://github.com/prometheus/procfs/blob/master/net_dev.go
 | proc_net_dev_collisions_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=tx | Counter | |
 | proc_net_dev_carrier_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=tx | Counter | |
 
-### proc_interrupt_*
+### proc_interrupts_*
 
 Source: `/proc/interrupts`
 
@@ -204,6 +204,6 @@ Parser: [proc_interrupts.go](https://github.com/prometheus/procfs/blob/master/pr
 
 | Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
-| proc_interrupt_total | hostname=_hostname_<br>job=_job_<br><br>interrupt=_num_\|_name_<br>cpu=_cpu_ | Counter | |
-| proc_interrupt_info | hostname=_hostname_<br>job=_job_<br><br>interrupt=_num_\|_name_<br>devices=_devices_<br>info=_info_ | 0\|1 | Pseudo-categorical |
+| proc_interrupts_total | hostname=_hostname_<br>job=_job_<br><br>interrupt=_num_\|_name_<br>cpu=_cpu_ | Counter | |
+| proc_interrupts_info | hostname=_hostname_<br>job=_job_<br><br>interrupt=_num_\|_name_<br>devices=_devices_<br>info=_info_ | 0\|1 | Pseudo-categorical |
 

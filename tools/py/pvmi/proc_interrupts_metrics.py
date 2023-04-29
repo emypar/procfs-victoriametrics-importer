@@ -28,7 +28,7 @@ def proc_interrupts_metrics(
             metrics.extend(
                 Metric(
                     metric=(
-                        f'proc_interrupt_total{{hostname="{_hostname}",job="{_job}",interrupt="{irq}",cpu="{cpu}"}}'
+                        f'proc_interrupts_total{{hostname="{_hostname}",job="{_job}",interrupt="{irq}",cpu="{cpu}"}}'
                     ),
                     val=val,
                     ts=ts,
@@ -38,7 +38,7 @@ def proc_interrupts_metrics(
         metrics.append(
             Metric(
                 metric=(
-                    f'proc_interrupt_info{{hostname="{_hostname}",job="{_job}",interrupt="{irq}",devices="{interrupt.Devices}",info="{interrupt.Info}"}}'
+                    f'proc_interrupts_info{{hostname="{_hostname}",job="{_job}",interrupt="{irq}",devices="{interrupt.Devices}",info="{interrupt.Info}"}}'
                 ),
                 val=0 if _clear_pseudo_only else 1,
                 ts=ts,
