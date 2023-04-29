@@ -35,14 +35,22 @@ type Interrupt struct {
 	Values []string
 }
 
-// Interrupts models the content of /proc/interrupts. Key is the IRQ number.
+// Interrupts models the content of /proc/interrupts or /proc/pid/interrupts. Key is the IRQ number.
 // - https://access.redhat.com/documentation/en-us/red_hat_enterprise_linux/6/html/deployment_guide/s2-proc-interrupts
 // - https://raspberrypi.stackexchange.com/questions/105802/explanation-of-proc-interrupts-output
 type Interrupts map[string]Interrupt
 
-// Interrupts creates a new instance from a given Proc instance.
+// Interrupts creates a new instance from a given FS or Proc instance.
+func (fs FS) Interrupts() (Interrupts, error) {
+	return newInterrupts(fs.proc.Path("interrupts"))
+}
+
 func (p Proc) Interrupts() (Interrupts, error) {
-	data, err := util.ReadFileNoStat(p.path("interrupts"))
+	return newInterrupts(p.path("interrupts"))
+}
+
+func newInterrupts(file string) (Interrupts, error) {
+	data, err := util.ReadFileNoStat(file)
 	if err != nil {
 		return nil, err
 	}

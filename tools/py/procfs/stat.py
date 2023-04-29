@@ -1,7 +1,7 @@
 # /usr/bin/env python3
 
 # handle /proc/stat
-# reference: https:#github.com/prometheus/procfs/blob/master/stat.go
+# reference: https://github.com/prometheus/procfs/blob/master/stat.go
 
 import dataclasses
 import os

@@ -81,6 +81,7 @@ def make_full_refresh_pndtc(
     for proc_net_dev_line in proc_net_dev.values():
         ts = proc_net_dev_line._ts
         break
+    prev_ts = ts - PROC_NET_DEV_METRICS_DELTA_INTERVAL
     device_list = sorted(proc_net_dev)
     want_next_refresh_group_num = len(proc_net_dev)
     for full_metrics_factor in range(2, len(proc_net_dev) + 2):
@@ -96,14 +97,19 @@ def make_full_refresh_pndtc(
             ]
             want_metrics = []
             for device in refresh_device_list:
+                net_dev_line = proc_net_dev[device]
                 want_metrics.extend(
-                    proc_net_dev_metrics.proc_net_dev_line_metrics(proc_net_dev[device])
+                    proc_net_dev_metrics.proc_net_dev_line_metrics(
+                        net_dev_line,
+                        prev_net_dev_line=net_dev_line,
+                        prev_ts=prev_ts,
+                    )
                 )
             tc = ProcNetDevMetricsTestCase(
                 Name=f'{name}:{"+".join(refresh_device_list)}',
                 ProcfsRoot=rel_path_to_file(procfs_root),
                 PrevNetDev=proc_net_dev,
-                PrevTimestamp=ts - PROC_NET_DEV_METRICS_DELTA_INTERVAL,
+                PrevTimestamp=prev_ts,
                 PrevRefreshGroupNum=refresh_group_num,
                 PrevNextRefreshGroupNum=want_next_refresh_group_num,
                 WantNetDev=proc_net_dev,
@@ -192,7 +198,11 @@ def make_delta_pndtc(
             prev_proc_net_dev[proc_net_dev_line.name] = prev_proc_net_dev_line
             want_metrics = metrics_delta(
                 proc_net_dev_metrics.proc_net_dev_line_metrics(prev_proc_net_dev_line),
-                proc_net_dev_metrics.proc_net_dev_line_metrics(proc_net_dev_line),
+                proc_net_dev_metrics.proc_net_dev_line_metrics(
+                    proc_net_dev_line,
+                    prev_net_dev_line=prev_proc_net_dev_line,
+                    _full_metrics=False,
+                ),
             )
             tc = ProcNetDevMetricsTestCase(
                 Name=f"{name}:{device}:{field_spec}:{prev_val}->{val}",

@@ -7,7 +7,7 @@ import dataclasses
 import os
 import sys
 import time
-from typing import Dict, Optional, Union
+from typing import Dict, Optional
 
 from metrics_common_test import TestdataProcfsRoot
 from tools_common import ts_to_prometheus_ts
@@ -37,7 +37,7 @@ class NetDevLine(ProcfsStructBase):
     tx_compressed: int = 0
 
 
-NetDev = Dict[str, Union[int, NetDevLine]]
+NetDev = Dict[str, NetDevLine]
 
 
 def load_net_dev(

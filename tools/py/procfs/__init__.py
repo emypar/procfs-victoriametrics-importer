@@ -13,6 +13,7 @@ sys.path.extend(tools_dir)
 
 
 from .common import ProcfsStructFieldSpec, ProcfsStructVal
+from .interrupts import Interrupt, Interrupts, load_interrupts
 from .net_dev import NetDev, NetDevLine, load_net_dev
 from .proc_cgroup import ProcPidCgroups, load_proc_pid_cgroups
 from .proc_cmdline import ProcPidCmdline, load_proc_pid_cmdline
@@ -23,6 +24,7 @@ from .stat import Stat, load_stat
 
 ProcfsStructType = Union[
     NetDev,
+    Interrupts,
     ProcStat,
     ProcStatus,
     ProcIO,

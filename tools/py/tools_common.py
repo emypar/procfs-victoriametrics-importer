@@ -69,4 +69,5 @@ def save_to_json_file(obj: Any, f_name: str):
     os.makedirs(os.path.dirname(f_name), exist_ok=True)
     with open(f_name, "wt") as f:
         json.dump(obj, f, indent=2)
+        f.write("\n")
     print(" done", file=sys.stderr)

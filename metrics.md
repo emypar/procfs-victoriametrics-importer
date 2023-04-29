@@ -6,7 +6,7 @@ proc_*filepath*\_*stat* for non `/proc/PID` stats and proc_pid_*filepath*\_*stat
 
 Examples:
 
-`proc_net_dev_rx_bytes` for the `Receive bytes` column extracted from `/proc/net/dev` file.
+`proc_net_dev_rx_packets` for the `Receive packets` column extracted from `/proc/net/dev` file.
 
 `proc_pid_stat_utime` for the `utime` row extracted from `/proc/PID/stat` file.
 
@@ -184,7 +184,7 @@ Parser: [net_dev.go](https://github.com/prometheus/procfs/blob/master/net_dev.go
 
 | Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
-| proc_net_dev_bytes_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_bps | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Gauge | bits/sec |
 | proc_net_dev_packets_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
 | proc_net_dev_errors_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
 | proc_net_dev_dropped_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
@@ -194,4 +194,16 @@ Parser: [net_dev.go](https://github.com/prometheus/procfs/blob/master/net_dev.go
 | proc_net_dev_multicast_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx | Counter | |
 | proc_net_dev_collisions_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=tx | Counter | |
 | proc_net_dev_carrier_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=tx | Counter | |
+
+### proc_interrupt_*
+
+Source: `/proc/interrupts`
+
+Parser: [proc_interrupts.go](https://github.com/prometheus/procfs/blob/master/proc_interrupts.go)
+
+
+| Metric | Labels | Type | Obs |
+| ------ | ------ | ----- | --- |
+| proc_interrupt_total | hostname=_hostname_<br>job=_job_<br><br>interrupt=_num_\|_name_<br>cpu=_cpu_ | Counter | |
+| proc_interrupt_info | hostname=_hostname_<br>job=_job_<br><br>interrupt=_num_\|_name_<br>devices=_devices_<br>info=_info_ | 0\|1 | Pseudo-categorical |
 

@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	PROC_NET_DEV_BYTES_METRIC_NAME      = "proc_net_dev_bytes_total"
+	PROC_NET_DEV_BPS_METRIC_NAME        = "proc_net_dev_bps"
 	PROC_NET_DEV_PACKETS_METRIC_NAME    = "proc_net_dev_packets_total"
 	PROC_NET_DEV_ERRORS_METRIC_NAME     = "proc_net_dev_errors_total"
 	PROC_NET_DEV_DROPPED_METRIC_NAME    = "proc_net_dev_dropped_total"
@@ -142,6 +142,7 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 	deltaStrategy := fullMetricsFactor > 1
 
 	prevNetDev := procNetDevMetricsCtx.prevNetDev
+	deltaTs := statsTs.Sub(procNetDevMetricsCtx.prevTs).Seconds()
 	newDevices := procNetDevMetricsCtx.newDevices[:0]
 	refreshGroupNum := procNetDevMetricsCtx.refreshGroupNum
 	refreshCycleNum := procNetDevMetricsCtx.refreshCycleNum
@@ -150,12 +151,10 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 	bufPool := procNetDevMetricsCtx.bufPool
 	buf := bufPool.GetBuffer()
 	wChan := procNetDevMetricsCtx.wChan
-	prevNetDevLine := procfs.NetDevLine{}
 	for device, netDevLine := range netDev {
 		fullMetrics := !deltaStrategy
-		exists := false
+		prevNetDevLine, exists := prevNetDev[device]
 		if deltaStrategy {
-			prevNetDevLine, exists = prevNetDev[device]
 			if exists {
 				fullMetrics = refreshGroupNum[device] == refreshCycleNum
 			} else {
@@ -163,8 +162,16 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 				newDevices = append(newDevices, device)
 			}
 		}
-		if fullMetrics || prevNetDevLine.RxBytes != netDevLine.RxBytes {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_BYTES_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxBytes, promTs)
+		if exists && (fullMetrics || prevNetDevLine.RxBytes != netDevLine.RxBytes) {
+			fmt.Fprintf(
+				buf,
+				counterMetricFmt,
+				PROC_NET_DEV_BPS_METRIC_NAME,
+				device,
+				PROC_NET_DEV_SIDE_RX_LABEL_VALUE,
+				uint64(float64(netDevLine.RxBytes-prevNetDevLine.RxBytes)/deltaTs*8.),
+				promTs,
+			)
 		}
 		if fullMetrics || prevNetDevLine.RxPackets != netDevLine.RxPackets {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxPackets, promTs)
@@ -187,8 +194,16 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 		if fullMetrics || prevNetDevLine.RxMulticast != netDevLine.RxMulticast {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_MULTICAST_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxMulticast, promTs)
 		}
-		if fullMetrics || prevNetDevLine.TxBytes != netDevLine.TxBytes {
-			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_BYTES_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxBytes, promTs)
+		if exists && (fullMetrics || prevNetDevLine.TxBytes != netDevLine.TxBytes) {
+			fmt.Fprintf(
+				buf,
+				counterMetricFmt,
+				PROC_NET_DEV_BPS_METRIC_NAME,
+				device,
+				PROC_NET_DEV_SIDE_TX_LABEL_VALUE,
+				uint64(float64(netDevLine.TxBytes-prevNetDevLine.TxBytes)/deltaTs*8.),
+				promTs,
+			)
 		}
 		if fullMetrics || prevNetDevLine.TxPackets != netDevLine.TxPackets {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxPackets, promTs)

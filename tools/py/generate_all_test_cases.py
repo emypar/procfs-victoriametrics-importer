@@ -5,6 +5,7 @@ import argparse
 from metrics_common_test import TestdataProcfsRoot, TestdataTestCasesDir
 from pvmi import (
     pid_list_test,
+    proc_interrupts_metrics_test,
     proc_net_dev_metrics_test,
     proc_pid_metrics_test,
     proc_stat_metrics_test,
@@ -17,6 +18,7 @@ gtc_map = {
         proc_pid_metrics_test,
         proc_stat_metrics_test,
         proc_net_dev_metrics_test,
+        proc_interrupts_metrics_test,
     ]
 }
 
