@@ -140,17 +140,17 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 		return nil, err
 	}
 
-	PidMetricsLog.Infof("pid_pid metrics: interval=%s", interval)
-	PidMetricsLog.Infof("pid_pid metrics: pidTidSelection=%s", pidTidSelection)
-	PidMetricsLog.Infof("pid_pid metrics: pidListValidInterval=%s", pidListValidInterval)
-	PidMetricsLog.Infof("pid_pid metrics: procfsRoot=%s", GlobalProcfsRoot)
-	PidMetricsLog.Infof("pid_pid metrics: fullMetricsFactor=%d", fullMetricsFactor)
-	PidMetricsLog.Infof("pid_pid metrics: activeThreshold=%d", activeThreshold)
-	PidMetricsLog.Infof("pid_pid metrics: hostname=%s", GlobalMetricsHostname)
-	PidMetricsLog.Infof("pid_pid metrics: job=%s", GlobalMetricsJob)
-	PidMetricsLog.Infof("pid_pid metrics: clktckSec=%f", ClktckSec)
+	PidMetricsLog.Infof("proc_pid metrics: interval=%s", interval)
+	PidMetricsLog.Infof("proc_pid metrics: pidTidSelection=%s", pidTidSelection)
+	PidMetricsLog.Infof("proc_pid metrics: pidListValidInterval=%s", pidListValidInterval)
+	PidMetricsLog.Infof("proc_pid metrics: procfsRoot=%s", GlobalProcfsRoot)
+	PidMetricsLog.Infof("proc_pid metrics: fullMetricsFactor=%d", fullMetricsFactor)
+	PidMetricsLog.Infof("proc_pid metrics: activeThreshold=%d", activeThreshold)
+	PidMetricsLog.Infof("proc_pid metrics: hostname=%s", GlobalMetricsHostname)
+	PidMetricsLog.Infof("proc_pid metrics: job=%s", GlobalMetricsJob)
+	PidMetricsLog.Infof("proc_pid metrics: clktckSec=%f", ClktckSec)
 
-	PidMetricsLog.Infof("pid_pid metrics: numGenerators=%d", numGenerators)
+	PidMetricsLog.Infof("proc_pid metrics: numGenerators=%d", numGenerators)
 
 	pidMetricsContextList := make([]*PidMetricsContext, numGenerators)
 	for pidListPart := 0; pidListPart < numGenerators; pidListPart++ {
