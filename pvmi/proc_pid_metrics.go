@@ -214,9 +214,10 @@ type PidMetricsCacheEntry struct {
 	RawCmdline []byte
 	// Cache delta cpu time, needed for delta strategy for %CPU metrics; delta
 	// cpu time is (STime - prevSTime)/(UTime - prevUTime). Since this is
-	// available only from 2nd scan onwards, store it as a pointer that becomes
-	// != nil only when this information is available.
-	DeltaUTime, DeltaSTime *uint
+	// available only from 2nd scan onwards, keep a flag indicating that this
+	// information is available.
+	DeltaUTime, DeltaSTime uint
+	ValidDeltaTime         bool
 	// Stats acquisition time stamp (Prometheus style, milliseconds since the
 	// epoch):
 	Timestamp int64
@@ -676,11 +677,8 @@ func GeneratePidMetrics(
 	}
 
 	// %CPU, but only if there was a previous pass and (full metrics or %CPU change):
-	if exists && (fullMetrics ||
-		pmce.DeltaUTime == nil || *pmce.DeltaUTime != deltaUTime ||
-		pmce.DeltaSTime == nil || *pmce.DeltaSTime != deltaSTime) {
-		dUTime := procStat.UTime - pmce.ProcStat.UTime
-		dSTime := procStat.STime - pmce.ProcStat.STime
+	validDeltaTime := pmce.ValidDeltaTime
+	if exists && (fullMetrics || !validDeltaTime || pmce.DeltaUTime != deltaUTime || pmce.DeltaSTime != deltaSTime) {
 		dTimeSec := float64(timestamp-pmce.Timestamp) / 1000. // Prometheus millisec -> sec
 		pCpuFactor := pidMetricsCtx.clktckSec / dTimeSec * 100.
 		fmt.Fprintf(
@@ -688,7 +686,7 @@ func GeneratePidMetrics(
 			"%s{%s} %.02f %s\n",
 			PROC_PID_STAT_UTIME_PCT_METRIC_NAME,
 			commonLabels,
-			float64(dUTime)*pCpuFactor,
+			float64(deltaUTime)*pCpuFactor,
 			metricTs,
 		)
 		fmt.Fprintf(
@@ -696,7 +694,7 @@ func GeneratePidMetrics(
 			"%s{%s} %.02f %s\n",
 			PROC_PID_STAT_STIME_PCT_METRIC_NAME,
 			commonLabels,
-			float64(dSTime)*pCpuFactor,
+			float64(deltaSTime)*pCpuFactor,
 			metricTs,
 		)
 		fmt.Fprintf(
@@ -704,7 +702,7 @@ func GeneratePidMetrics(
 			"%s{%s} %.02f %s\n",
 			PROC_PID_STAT_CPU_TIME_PCT_METRIC_NAME,
 			commonLabels,
-			float64(dUTime+dSTime)*pCpuFactor,
+			float64(deltaUTime+deltaSTime)*pCpuFactor,
 			metricTs,
 		)
 		generatedCount += 3
@@ -763,16 +761,7 @@ func GeneratePidMetrics(
 	}
 	pmce.ProcStat = procStat
 	if exists {
-		if pmce.DeltaUTime == nil {
-			pmce.DeltaUTime = &deltaUTime
-		} else {
-			*pmce.DeltaUTime = deltaUTime
-		}
-		if pmce.DeltaSTime == nil {
-			pmce.DeltaSTime = &deltaSTime
-		} else {
-			*pmce.DeltaSTime = deltaSTime
-		}
+		pmce.DeltaUTime, pmce.DeltaSTime, pmce.ValidDeltaTime = deltaUTime, deltaSTime, true
 	}
 
 	if procStatus != nil {

@@ -109,6 +109,9 @@ func clonePmce(pmce *PidMetricsCacheEntry) *PidMetricsCacheEntry {
 		RawCgroup:               make([]byte, len(pmce.RawCgroup)),
 		RawCmdline:              make([]byte, len(pmce.RawCmdline)),
 		ProcIo:                  &procfs.ProcIO{},
+		DeltaUTime:              pmce.DeltaUTime,
+		DeltaSTime:              pmce.DeltaSTime,
+		ValidDeltaTime:          pmce.ValidDeltaTime,
 		Timestamp:               pmce.Timestamp,
 		CommonLabels:            pmce.CommonLabels,
 		ProcPidCmdlineMetric:    pmce.ProcPidCmdlineMetric,
@@ -126,14 +129,6 @@ func clonePmce(pmce *PidMetricsCacheEntry) *PidMetricsCacheEntry {
 		for k, v := range pmce.ProcPidCgroupMetrics {
 			new_pmce.ProcPidCgroupMetrics[k] = v
 		}
-	}
-	if pmce.DeltaUTime != nil {
-		deltaTime := *pmce.DeltaUTime
-		new_pmce.DeltaUTime = &deltaTime
-	}
-	if pmce.DeltaSTime != nil {
-		deltaTime := *pmce.DeltaSTime
-		new_pmce.DeltaSTime = &deltaTime
 	}
 	return new_pmce
 }

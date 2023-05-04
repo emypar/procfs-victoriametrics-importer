@@ -46,7 +46,7 @@ def load_psmtc(
         ProcfsRoot=rel_path_to_file(procfs_root),
         WantStat=proc_stat,
         Timestamp=proc_stat._ts,
-        WantMetrics=proc_stat_metrics.generate_all_metrics(proc_stat),
+        WantMetrics=proc_stat_metrics.proc_stat_metrics(proc_stat),
         FullMetricsFactor=full_metrics_factor,
         RefreshCycleNum=refresh_cycle_num,
     )
@@ -67,7 +67,7 @@ def make_refresh_psmtc(
     prev_proc_stat = deepcopy(proc_stat)
     prev_ts = ts - PROC_STAT_METRICS_DELTA_INTERVAL
     prev_proc_stat._ts = prev_ts
-    full_metrics = proc_stat_metrics.generate_all_metrics(
+    full_metrics = proc_stat_metrics.proc_stat_metrics(
         proc_stat, prev_proc_stat=prev_proc_stat, _full_metrics=True
     )
     for refresh_cycle_num in range(num_refresh_cycles):
@@ -123,11 +123,11 @@ def make_delta_psmtc(
         prev_proc_stat._ts = prev_ts
         prev_val = val - min(val, 1)
         prev_proc_stat.set_field(field_spec, prev_val)
-        prev_full_metrics = proc_stat_metrics.generate_all_metrics(prev_proc_stat)
+        prev_full_metrics = proc_stat_metrics.proc_stat_metrics(prev_proc_stat)
         # Choose a refresh cycle such that this field is not due for change:
         if field_spec.startswith("CPU"):
             refresh_cycle_num = 0
-            full_metrics = proc_stat_metrics.generate_all_metrics(
+            full_metrics = proc_stat_metrics.proc_stat_metrics(
                 proc_stat, prev_proc_stat=prev_proc_stat, _full_metrics=False
             )
             delta_metrics = metrics_delta(prev_full_metrics, full_metrics)
@@ -136,7 +136,7 @@ def make_delta_psmtc(
             ]
         else:
             refresh_cycle_num = 1
-            full_metrics = proc_stat_metrics.generate_all_metrics(
+            full_metrics = proc_stat_metrics.proc_stat_metrics(
                 proc_stat, prev_proc_stat=prev_proc_stat, _full_metrics=True
             )
             delta_metrics = metrics_delta(prev_full_metrics, full_metrics)

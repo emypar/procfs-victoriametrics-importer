@@ -57,10 +57,11 @@ class PidMetricsCacheEntry(StructBase):
     RawCmdline: bytes = b""
     # Cache delta cpu time, needed for delta strategy for %CPU metrics; delta
     # cpu time is (STime - prevSTime)/(UTime - prevUTime). Since this is
-    # available only from 2nd scan onwards, store it as a pointer that becomes
-    # != nil only when this information is available.
-    DeltaUTime: Optional[int] = None
-    DeltaSTime: Optional[int] = None
+    # available only from 2nd scan onwards, keep a flag indicating that this
+    # information is available.
+    DeltaUTime: int = 0
+    DeltaSTime: int = 0
+    ValidDeltaTime: bool = False
     # Stats acquisition time stamp (Prometheus style, milliseconds since the
     # epoch):
     Timestamp: int = 0
@@ -181,6 +182,7 @@ def update_pmce(
     ):
         pmce.DeltaUTime = pmce.ProcStat.UTime - prev_pmce.ProcStat.UTime
         pmce.DeltaSTime = pmce.ProcStat.STime - prev_pmce.ProcStat.STime
+        pmce.ValidDeltaTime = True
 
 
 def generate_pmce_full_metrics(
