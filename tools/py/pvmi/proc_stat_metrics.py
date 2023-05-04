@@ -7,12 +7,9 @@ from typing import List, Optional
 import procfs
 from metrics_common_test import TestHostname, TestJob
 
-from .common import Metric, register_metrics_fn
-
-metrics_fn_map = {}
+from .common import Metric
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_stat_cpu_metrics(
     proc_stat: procfs.Stat,
     ts: Optional[int] = None,
@@ -49,7 +46,6 @@ def proc_stat_cpu_metrics(
     return metrics
 
 
-@register_metrics_fn(metrics_fn_map, require_history=True)
 def proc_stat_pcpu_metrics(
     proc_stat: procfs.Stat,
     prev_proc_stat: procfs.Stat,
@@ -100,7 +96,6 @@ def proc_stat_pcpu_metrics(
     return metrics
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_stat_boot_time_metric(
     proc_stat: procfs.Stat,
     ts: Optional[int] = None,
@@ -114,7 +109,6 @@ def proc_stat_boot_time_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_stat_irq_total_count_metric(
     proc_stat: procfs.Stat,
     ts: Optional[int] = None,
@@ -128,7 +122,6 @@ def proc_stat_irq_total_count_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_stat_softirq_total_count_metric(
     proc_stat: procfs.Stat,
     ts: Optional[int] = None,
@@ -142,7 +135,6 @@ def proc_stat_softirq_total_count_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_stat_context_switches_count_metric(
     proc_stat: procfs.Stat,
     ts: Optional[int] = None,
@@ -156,7 +148,6 @@ def proc_stat_context_switches_count_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_stat_process_created_count_count_metric(
     proc_stat: procfs.Stat,
     ts: Optional[int] = None,
@@ -170,7 +161,6 @@ def proc_stat_process_created_count_count_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_stat_process_running_count_count_metric(
     proc_stat: procfs.Stat,
     ts: Optional[int] = None,
@@ -184,7 +174,6 @@ def proc_stat_process_running_count_count_metric(
     )
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_stat_process_blocked_count_count_metric(
     proc_stat: procfs.Stat,
     ts: Optional[int] = None,

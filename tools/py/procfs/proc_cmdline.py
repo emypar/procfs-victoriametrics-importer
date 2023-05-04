@@ -7,7 +7,6 @@ import os
 import time
 
 from metrics_common_test import TestdataProcfsRoot
-from tools_common import ts_to_prometheus_ts
 
 from .common import ProcfsStructBase, proc_pid_dir
 
@@ -35,5 +34,5 @@ def load_proc_pid_cmdline(
         raw = f.read()
     ts = os.stat(stat_path).st_mtime if _use_ts_from_file else time.time()
     procPidCmdline = ProcPidCmdline(raw)
-    procPidCmdline._ts = ts_to_prometheus_ts(ts)
+    procPidCmdline._ts = ts
     return procPidCmdline

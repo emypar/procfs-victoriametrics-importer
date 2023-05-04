@@ -86,10 +86,12 @@ type PidMetricsContext struct {
 	// for stats that changed from the previous run, however the full set is
 	// generated at every Nth pass. Use  N = 1 for full metrics every time.
 	fullMetricsFactor int
-	// Full metrics cycle seed, using to initialize the PID full metrics cycle
-	// counter at PID cache entry creation time. It will be changed after each
-	// use.
-	fullMetricsCycleSeed int
+	// Full metrics will be generated for a PID[,TID] when its refreshCycleNum
+	// == 0. The latter is a counter % fullMetricsFactor, which is initialized
+	// when the process/thread is discovered. To stagger the the full metrics
+	// cycles across all PIDs, the counter is initialized from a seed which is
+	// incremented, also % fullMetricsFactor, after each use.
+	refreshCycleNumSeed int
 	// Active process threshold. A process/thread is deemed active if its delta(UTime
 	// + STime) >= threshold; for a non-active, non-full metrics pass, only the
 	// `stat` based metrics are being generated. Use threshold = 0 to disable it.
@@ -186,12 +188,13 @@ func (pidMetricsCtx *PidMetricsContext) GetStats() *PidMetricsStats {
 	return pidMetricsCtx.pmStats
 }
 
-func (pidMetricsCtx *PidMetricsContext) GetFullMetricsCycleSeed() int {
-	pidMetricsCtx.fullMetricsCycleSeed += 1
-	if pidMetricsCtx.fullMetricsCycleSeed > pidMetricsCtx.fullMetricsFactor {
-		pidMetricsCtx.fullMetricsCycleSeed = 1
+func (pidMetricsCtx *PidMetricsContext) GetRefreshCycleNumSeed() int {
+	refreshCycleNumSeed := pidMetricsCtx.refreshCycleNumSeed
+	pidMetricsCtx.refreshCycleNumSeed += 1
+	if pidMetricsCtx.refreshCycleNumSeed >= pidMetricsCtx.fullMetricsFactor {
+		pidMetricsCtx.refreshCycleNumSeed = 0
 	}
-	return pidMetricsCtx.fullMetricsCycleSeed
+	return refreshCycleNumSeed
 }
 
 // Previous pass cache, required for pseudo-categorical metrics and for %CPU.
@@ -199,8 +202,8 @@ type PidMetricsCacheEntry struct {
 	// The pass# when this entry was updated, needed for detecting out-of-scope
 	// PIDs:
 	PassNum uint64
-	// Full metrics cycle:
-	FullMetricsCycleNum int
+	// Refresh cycle#, see refreshCycleNumSeed in PidMetricsContext:
+	RefreshCycleNum int
 	// Cache parsed data from /proc:
 	ProcStat   *procfs.ProcStat
 	ProcStatus *procfs.ProcStatus
@@ -209,6 +212,11 @@ type PidMetricsCacheEntry struct {
 	// doesn't change often:
 	RawCgroup  []byte
 	RawCmdline []byte
+	// Cache delta cpu time, needed for delta strategy for %CPU metrics; delta
+	// cpu time is (STime - prevSTime)/(UTime - prevUTime). Since this is
+	// available only from 2nd scan onwards, store it as a pointer that becomes
+	// != nil only when this information is available.
+	DeltaUTime, DeltaSTime *uint
 	// Stats acquisition time stamp (Prometheus style, milliseconds since the
 	// epoch):
 	Timestamp int64
@@ -294,6 +302,7 @@ func GeneratePidMetrics(
 	var err error
 	var procDir string
 	var generatedCount uint64 = 0
+	var deltaUTime, deltaSTime uint
 
 	pmc := pidMetricsCtx.pmc
 	psc := pidMetricsCtx.psc
@@ -375,17 +384,16 @@ func GeneratePidMetrics(
 	}
 
 	if exists {
-		if pidMetricsCtx.activeThreshold == 0 ||
-			(procStat.UTime+procStat.STime)-(pmce.ProcStat.UTime+pmce.ProcStat.STime) >= pidMetricsCtx.activeThreshold {
+		deltaUTime = procStat.UTime - pmce.ProcStat.UTime
+		deltaSTime = procStat.STime - pmce.ProcStat.STime
+		if pidMetricsCtx.activeThreshold == 0 || (deltaUTime+deltaSTime) >= pidMetricsCtx.activeThreshold {
 			isActive = true
 		}
 		if pidMetricsCtx.fullMetricsFactor > 1 {
-			pmce.FullMetricsCycleNum += 1
-			if pmce.FullMetricsCycleNum > pidMetricsCtx.fullMetricsFactor {
-				pmce.FullMetricsCycleNum = 1
-			}
-			if pmce.FullMetricsCycleNum == pidMetricsCtx.fullMetricsFactor {
-				fullMetrics = true
+			fullMetrics = pmce.RefreshCycleNum == 0
+			pmce.RefreshCycleNum += 1
+			if pmce.RefreshCycleNum >= pidMetricsCtx.fullMetricsFactor {
+				pmce.RefreshCycleNum = 0
 			}
 		}
 	} else {
@@ -434,7 +442,7 @@ func GeneratePidMetrics(
 			RawCmdline: rawCmdline,
 		}
 		if pidMetricsCtx.fullMetricsFactor > 1 {
-			pmce.FullMetricsCycleNum = pidMetricsCtx.GetFullMetricsCycleSeed()
+			pmce.RefreshCycleNum = pidMetricsCtx.GetRefreshCycleNumSeed()
 		}
 		if isForPid {
 			pmce.CommonLabels = fmt.Sprintf(
@@ -616,7 +624,6 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_utime_seconds:
-	pCpuChanged := false
 	if fullMetrics || procStat.UTime != pmce.ProcStat.UTime {
 		fmt.Fprintf(
 			buf,
@@ -626,7 +633,6 @@ func GeneratePidMetrics(
 			float64(procStat.UTime)*pidMetricsCtx.clktckSec,
 			metricTs,
 		)
-		pCpuChanged = true
 		generatedCount += 1
 	}
 
@@ -640,7 +646,6 @@ func GeneratePidMetrics(
 			float64(procStat.STime)*pidMetricsCtx.clktckSec,
 			metricTs,
 		)
-		pCpuChanged = true
 		generatedCount += 1
 	}
 
@@ -670,9 +675,10 @@ func GeneratePidMetrics(
 		generatedCount += 1
 	}
 
-	// %CPU, but only if there was a previous pass:
-	if exists && (fullMetrics || pCpuChanged) {
-		// %CPU = (procStat.XTime - pmce.ProcStat.XTime) * pidMetricsCtx.clktckSec / ((timestamp - pmce.timestamp)/1000) * 100
+	// %CPU, but only if there was a previous pass and (full metrics or %CPU change):
+	if exists && (fullMetrics ||
+		pmce.DeltaUTime == nil || *pmce.DeltaUTime != deltaUTime ||
+		pmce.DeltaSTime == nil || *pmce.DeltaSTime != deltaSTime) {
 		dUTime := procStat.UTime - pmce.ProcStat.UTime
 		dSTime := procStat.STime - pmce.ProcStat.STime
 		dTimeSec := float64(timestamp-pmce.Timestamp) / 1000. // Prometheus millisec -> sec
@@ -701,7 +707,7 @@ func GeneratePidMetrics(
 			float64(dUTime+dSTime)*pCpuFactor,
 			metricTs,
 		)
-		generatedCount += 2
+		generatedCount += 3
 	}
 
 	// proc_pid_stat_vsize:
@@ -756,6 +762,18 @@ func GeneratePidMetrics(
 		generatedCount += 1
 	}
 	pmce.ProcStat = procStat
+	if exists {
+		if pmce.DeltaUTime == nil {
+			pmce.DeltaUTime = &deltaUTime
+		} else {
+			*pmce.DeltaUTime = deltaUTime
+		}
+		if pmce.DeltaSTime == nil {
+			pmce.DeltaSTime = &deltaSTime
+		} else {
+			*pmce.DeltaSTime = deltaSTime
+		}
+	}
 
 	if procStatus != nil {
 		// proc_pid_status_vm_peak:

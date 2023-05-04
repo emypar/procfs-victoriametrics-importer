@@ -9,7 +9,6 @@ import os
 import time
 
 from metrics_common_test import TestdataProcfsRoot
-from tools_common import ts_to_prometheus_ts
 
 from .common import ProcfsStructBase, proc_pid_dir
 
@@ -161,7 +160,7 @@ def load_proc_pid_stat(
     comm = line[comm_s:comm_e]
     pid = line[: comm_s - len(start_comm_mark)].strip()
     fields = [pid, comm] + line[comm_e + len(end_comm_mark) :].split()
-    procStat = ProcStat(_ts=ts_to_prometheus_ts(ts))
+    procStat = ProcStat(_ts=ts)
     for i, field_name in PROC_STAT_INDEX_TO_FIELD_NAME_MAP.items():
         field_type = type(getattr(procStat, field_name))
         setattr(procStat, field_name, field_type(fields[i]))

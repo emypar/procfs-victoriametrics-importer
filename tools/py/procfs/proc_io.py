@@ -8,7 +8,6 @@ import os
 import time
 
 from metrics_common_test import TestdataProcfsRoot
-from tools_common import ts_to_prometheus_ts
 
 from .common import ProcfsStructBase, proc_pid_dir
 
@@ -54,9 +53,7 @@ def load_proc_pid_io(
 ) -> ProcIO:
     stat_path = os.path.join(proc_pid_dir(pid, tid=tid, procfs_root=procfs_root), "io")
     ts = os.stat(stat_path).st_mtime if _use_ts_from_file else time.time()
-    procIO = ProcIO(
-        _ts=ts_to_prometheus_ts(ts),
-    )
+    procIO = ProcIO(_ts=ts)
     with open(stat_path, "rt") as f:
         for line in f:
             i = line.index(":")

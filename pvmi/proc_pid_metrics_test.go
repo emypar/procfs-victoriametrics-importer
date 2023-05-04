@@ -103,7 +103,7 @@ func TestPidMetricsTestCaseLoad(t *testing.T) {
 func clonePmce(pmce *PidMetricsCacheEntry) *PidMetricsCacheEntry {
 	new_pmce := &PidMetricsCacheEntry{
 		PassNum:                 pmce.PassNum,
-		FullMetricsCycleNum:     pmce.FullMetricsCycleNum,
+		RefreshCycleNum:         pmce.RefreshCycleNum,
 		ProcStat:                &procfs.ProcStat{},
 		ProcStatus:              &procfs.ProcStatus{},
 		RawCgroup:               make([]byte, len(pmce.RawCgroup)),
@@ -126,6 +126,14 @@ func clonePmce(pmce *PidMetricsCacheEntry) *PidMetricsCacheEntry {
 		for k, v := range pmce.ProcPidCgroupMetrics {
 			new_pmce.ProcPidCgroupMetrics[k] = v
 		}
+	}
+	if pmce.DeltaUTime != nil {
+		deltaTime := *pmce.DeltaUTime
+		new_pmce.DeltaUTime = &deltaTime
+	}
+	if pmce.DeltaSTime != nil {
+		deltaTime := *pmce.DeltaSTime
+		new_pmce.DeltaSTime = &deltaTime
 	}
 	return new_pmce
 }
@@ -223,24 +231,24 @@ func runPidMetricsTestCases(
 		addPidMetricsTestCase(&pmtc, pmc, tm, nil)
 		psc := PidStarttimeCache{}
 
-		prevPmceFullMetricsCycle := "N/A"
+		prevPmceRefreshCycleNum := "N/A"
 		if pmtc.PrevPmce != nil {
-			prevPmceFullMetricsCycle = strconv.Itoa(pmtc.PrevPmce.FullMetricsCycleNum)
+			prevPmceRefreshCycleNum = strconv.Itoa(pmtc.PrevPmce.RefreshCycleNum)
 		}
-		wantPmceFullMetricsCycle := "N/A"
+		wantPmceRefreshCycleNum := "N/A"
 		if pmtc.WantPmce != nil {
-			wantPmceFullMetricsCycle = strconv.Itoa(pmtc.WantPmce.FullMetricsCycleNum)
+			wantPmceRefreshCycleNum = strconv.Itoa(pmtc.WantPmce.RefreshCycleNum)
 		}
 		t.Run(
 			fmt.Sprintf(
-				"Name=%s,Pid=%d,Tid=%d,FullMetricsFactor=%d,ActiveThreshold=%d,PmceFullMetricsCycle:%s->%s",
+				"Name=%s,Pid=%d,Tid=%d,FullMetricsFactor=%d,ActiveThreshold=%d,PmceRefreshCycleNum:%s->%s",
 				pmtc.Name,
 				pmtc.Pid,
 				pmtc.Tid,
 				pmtc.FullMetricsFactor,
 				pmtc.ActiveThreshold,
-				prevPmceFullMetricsCycle,
-				wantPmceFullMetricsCycle,
+				prevPmceRefreshCycleNum,
+				wantPmceRefreshCycleNum,
 			),
 			func(t *testing.T) { runPidMetricsTestCase(t, pmtc, pmc, psc, tm) },
 		)

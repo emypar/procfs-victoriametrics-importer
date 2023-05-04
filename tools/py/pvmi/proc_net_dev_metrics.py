@@ -7,9 +7,7 @@ from typing import List, Optional
 import procfs
 from metrics_common_test import TestHostname, TestJob
 
-from .common import Metric, register_metrics_fn
-
-metrics_fn_map = {}
+from .common import Metric
 
 UNIT64_ROLLOVER_CORRECTION = 1 << 64
 
@@ -75,7 +73,6 @@ def proc_net_dev_line_metrics(
     return metrics
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_net_dev_metrics(
     net_dev: procfs.NetDev,
     ts: Optional[int] = None,

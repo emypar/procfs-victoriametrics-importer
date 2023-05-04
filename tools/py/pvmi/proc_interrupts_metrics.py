@@ -7,12 +7,9 @@ from typing import List, Optional
 import procfs
 from metrics_common_test import TestHostname, TestJob
 
-from .common import Metric, register_metrics_fn
-
-metrics_fn_map = {}
+from .common import Metric
 
 
-@register_metrics_fn(metrics_fn_map)
 def proc_interrupts_metrics(
     interrupts: procfs.Interrupts,
     ts: Optional[int] = None,

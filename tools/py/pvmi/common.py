@@ -39,7 +39,22 @@ class Metric:
         return self.metric[:i] if i >= 0 else self.metric
 
 
-def metrics_delta(prev_metrics: List[Metric], metrics: List[Metric]) -> List[Metric]:
+def ts_to_prometheus_ts(ts: float) -> int:
+    return int(ts * 1000.0)
+
+
+def prometheus_ts_to_ts(prom_ts: int) -> float:
+    return float(prom_ts) / 1000.0
+
+
+def sanitize_label_value(v: str) -> str:
+    return v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+
+
+def metrics_delta(
+    prev_metrics: List[Metric],
+    metrics: List[Metric],
+) -> List[Metric]:
     prev_metrics_name_val = set(
         (m.metric, m.val if m.valfmt is None else f"{m.val:{m.valfmt}}")
         for m in prev_metrics
@@ -50,14 +65,3 @@ def metrics_delta(prev_metrics: List[Metric], metrics: List[Metric]) -> List[Met
         if (m.metric, val) not in prev_metrics_name_val:
             delta_metrics.append(m)
     return delta_metrics
-
-
-def register_metrics_fn(
-    metrics_fn_map: MetricsFnMap,
-    require_history: bool = False,
-) -> Callable:
-    def wrapper(fn: Callable) -> Callable:
-        metrics_fn_map[fn] = require_history
-        return fn
-
-    return wrapper

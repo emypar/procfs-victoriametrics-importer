@@ -5,28 +5,30 @@
 from typing import Optional
 
 import procfs
-from tools_common import sanitize_label_value
 
-from .common import Metric, register_metrics_fn
+from .common import Metric, sanitize_label_value, ts_to_prometheus_ts
 
-metrics_fn_map = {}
+PROC_PID_CMDLINE_METRIC_NAME = "proc_pid_cmdline"
+proc_pid_cmdline_categorical_metric_names = [
+    PROC_PID_CMDLINE_METRIC_NAME,
+]
 
 
-@register_metrics_fn(metrics_fn_map)
-def proc_pid_cmdline_metrics(
-    procPidCmdline: procfs.ProcPidCmdline,
+def generate_proc_pid_cmdline_metrics(
+    proc_pid_cmdline: procfs.ProcPidCmdline,
     common_labels: str,
     ts: Optional[int] = None,
-    _val: int = 1,
 ) -> Metric:
+    if ts is None:
+        ts = proc_pid_cmdline._ts
+    labels_sep = "," if common_labels else ""
+    prom_ts = ts_to_prometheus_ts(ts)
     return Metric(
         metric=(
-            "proc_pid_cmdline"
-            + "{"
-            + common_labels
-            + f''',cmdline="{sanitize_label_value(procPidCmdline.cmdline)}"'''
-            + "}"
+            f"proc_pid_cmdline{{{common_labels}{labels_sep}"
+            f'cmdline="{sanitize_label_value(proc_pid_cmdline.cmdline)}"'
+            "}"
         ),
-        val=_val,
-        ts=ts if ts is not None else procPidCmdline._ts,
+        val=1,
+        ts=prom_ts,
     )

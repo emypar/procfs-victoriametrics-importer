@@ -13,4 +13,5 @@ sys.path.extend(py_tools_dir)
 
 from . import pid_list_test
 from .common import Metric
-from .proc_pid_metrics import PidMetricsCacheEntry
+
+# from .proc_pid_metrics import PidMetricsCacheEntry

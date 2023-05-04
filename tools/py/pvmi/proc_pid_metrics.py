@@ -3,24 +3,41 @@
 # support for pvmi/proc_pid_metrics.go testing
 
 import dataclasses
-from typing import List, Literal, Optional
+from typing import List, Optional
 
 import procfs
 from metrics_common_test import TestdataProcfsRoot
 from tools_common import StructBase
 
-from . import (
-    proc_pid_cgroup_metrics,
-    proc_pid_cmdline_metrics,
-    proc_pid_io_metrics,
-    proc_pid_stat_metrics,
-    proc_pid_status_metrics,
+from .common import Metric, prometheus_ts_to_ts, ts_to_prometheus_ts
+from .proc_pid_cgroup_metrics import (
+    generate_proc_pid_cgroup_metrics,
+    proc_pid_cgroup_categorical_metric_names,
 )
-from .common import Metric
+from .proc_pid_cmdline_metrics import (
+    generate_proc_pid_cmdline_metrics,
+    proc_pid_cmdline_categorical_metric_names,
+)
+from .proc_pid_io_metrics import generate_proc_pid_io_metrics
+from .proc_pid_stat_metrics import (
+    PROC_PID_STAT_INFO_METRIC_NAME,
+    PROC_PID_STAT_STATE_METRIC_NAME,
+    generate_proc_pid_stat_metrics,
+    make_common_labels,
+    proc_pid_stat_categorical_metric_names,
+)
+from .proc_pid_status_metrics import (
+    PROC_PID_STATUS_INFO_METRIC_NAME,
+    generate_proc_pid_status_metrics,
+    proc_pid_status_categorical_metric_names,
+)
 
-PmceStatFieldName = Literal[
-    "ProcStat", "ProcStatus", "ProcIo", "_procCgroups", "_procCmdline"
-]
+proc_pid_categorical_metric_names = (
+    proc_pid_cgroup_categorical_metric_names
+    + proc_pid_cmdline_categorical_metric_names
+    + proc_pid_stat_categorical_metric_names
+    + proc_pid_status_categorical_metric_names
+)
 
 
 @dataclasses.dataclass
@@ -28,8 +45,8 @@ class PidMetricsCacheEntry(StructBase):
     # The pass# when this entry was updated, needed for detecting out-of-scope
     # PIDs:
     PassNum: int = 0
-    # Full metrics cycle:
-    FullMetricsCycleNum: int = 0
+    # Refresh cycle#:
+    RefreshCycleNum: int = 0
     # Cache parsed data from /proc:
     ProcStat: Optional[procfs.ProcStat] = None
     ProcStatus: Optional[procfs.ProcStatus] = None
@@ -38,6 +55,12 @@ class PidMetricsCacheEntry(StructBase):
     # doesn't change often:
     RawCgroup: bytes = b""
     RawCmdline: bytes = b""
+    # Cache delta cpu time, needed for delta strategy for %CPU metrics; delta
+    # cpu time is (STime - prevSTime)/(UTime - prevUTime). Since this is
+    # available only from 2nd scan onwards, store it as a pointer that becomes
+    # != nil only when this information is available.
+    DeltaUTime: Optional[int] = None
+    DeltaSTime: Optional[int] = None
     # Stats acquisition time stamp (Prometheus style, milliseconds since the
     # epoch):
     Timestamp: int = 0
@@ -56,13 +79,13 @@ class PidMetricsCacheEntry(StructBase):
     _procCmdline: Optional[procfs.ProcPidCmdline] = None
 
 
-pmce_field_to_metrics_fn_map = {
-    "ProcStat": proc_pid_stat_metrics.metrics_fn_map,
-    "ProcStatus": proc_pid_status_metrics.metrics_fn_map,
-    "ProcIo": proc_pid_io_metrics.metrics_fn_map,
-    "_procCgroups": proc_pid_cgroup_metrics.metrics_fn_map,
-    "_procCmdline": proc_pid_cmdline_metrics.metrics_fn_map,
-}
+PmceStatFieldNames = (
+    "ProcStat",
+    "ProcStatus",
+    "ProcIo",
+    "RawCgroup",
+    "RawCmdline",
+)
 
 
 def load_pmce(
@@ -70,22 +93,30 @@ def load_pmce(
     tid: int = 0,
     procfs_root: str = TestdataProcfsRoot,
 ) -> PidMetricsCacheEntry:
-    procStat = procfs.load_proc_pid_stat(pid, tid=tid, procfs_root=procfs_root)
-    procStatus = procfs.load_proc_pid_status(pid, tid=tid, procfs_root=procfs_root)
-    procIo = procfs.load_proc_pid_io(pid, tid=tid, procfs_root=procfs_root)
-    procCgroups = procfs.load_proc_pid_cgroups(pid, tid=tid, procfs_root=procfs_root)
-    procCmdline = procfs.load_proc_pid_cmdline(pid, tid=tid, procfs_root=procfs_root)
-    common_labels = proc_pid_stat_metrics.make_common_labels(
+    proc_pid_stat = procfs.load_proc_pid_stat(pid, tid=tid, procfs_root=procfs_root)
+    proc_pid_status = procfs.load_proc_pid_status(pid, tid=tid, procfs_root=procfs_root)
+    proc_pid_io = procfs.load_proc_pid_io(pid, tid=tid, procfs_root=procfs_root)
+    proc_pid_cgroups = procfs.load_proc_pid_cgroups(
         pid, tid=tid, procfs_root=procfs_root
     )
-    ts = max(procStat._ts, procStatus._ts, procIo._ts, procCgroups._ts, procCmdline._ts)
+    proc_pid_cmdline = procfs.load_proc_pid_cmdline(
+        pid, tid=tid, procfs_root=procfs_root
+    )
+    common_labels = make_common_labels(pid, tid=tid, procfs_root=procfs_root)
+    ts = max(
+        proc_pid_stat._ts,
+        proc_pid_status._ts,
+        proc_pid_io._ts,
+        proc_pid_cgroups._ts,
+        proc_pid_cmdline._ts,
+    )
     pmce = PidMetricsCacheEntry(
-        ProcStat=procStat,
-        ProcStatus=procStatus,
-        ProcIo=procIo,
-        RawCgroup=procCgroups.raw,
-        RawCmdline=procCmdline.raw,
-        Timestamp=ts,
+        ProcStat=proc_pid_stat,
+        ProcStatus=proc_pid_status,
+        ProcIo=proc_pid_io,
+        RawCgroup=proc_pid_cgroups.raw,
+        RawCmdline=proc_pid_cmdline.raw,
+        Timestamp=ts_to_prometheus_ts(ts),
         CommonLabels=common_labels,
     )
     update_pmce(pmce)
@@ -94,57 +125,62 @@ def load_pmce(
 
 def update_pmce(
     pmce: PidMetricsCacheEntry,
-    procStat: Optional[procfs.ProcStat] = None,
-    procStatus: Optional[procfs.ProcStatus] = None,
-    procIo: Optional[procfs.ProcIO] = None,
+    proc_pid_stat: Optional[procfs.ProcStat] = None,
+    proc_pid_status: Optional[procfs.ProcStatus] = None,
+    proc_pid_io: Optional[procfs.ProcIO] = None,
     rawCgroup: Optional[bytes] = None,
     rawCmdline: Optional[bytes] = None,
+    prev_pmce: Optional[PidMetricsCacheEntry] = None,
 ):
-    if procStat is not None:
-        pmce.ProcStat = procStat
+    if proc_pid_stat is not None:
+        pmce.ProcStat = proc_pid_stat
     if pmce.ProcStat is not None:
-        pmce.ProcPidStatStateMetric = proc_pid_stat_metrics.proc_pid_stat_state_metric(
-            pmce.ProcStat, pmce.CommonLabels
-        ).metric
-        pmce.ProcPidStatInfoMetric = proc_pid_stat_metrics.proc_pid_stat_info_metric(
-            pmce.ProcStat, pmce.CommonLabels
-        ).metric
+        metrics = generate_proc_pid_stat_metrics(pmce.ProcStat, pmce.CommonLabels)
+        for m in metrics:
+            m_name = m.name()
+            if m_name == PROC_PID_STAT_STATE_METRIC_NAME:
+                pmce.ProcPidStatStateMetric = m.metric
+            elif m_name == PROC_PID_STAT_INFO_METRIC_NAME:
+                pmce.ProcPidStatInfoMetric = m.metric
     else:
         pmce.ProcPidStatStateMetric = ""
         pmce.ProcPidStatInfoMetric = ""
-    if procStatus is not None:
-        pmce.ProcStatus = procStatus
+    if proc_pid_status is not None:
+        pmce.ProcStatus = proc_pid_status
     if pmce.ProcStatus is not None:
-        pmce.ProcPidStatusInfoMetric = (
-            proc_pid_status_metrics.proc_pid_status_info_metric(
-                pmce.ProcStatus, pmce.CommonLabels
-            ).metric
-        )
+        metrics = generate_proc_pid_status_metrics(pmce.ProcStatus, pmce.CommonLabels)
+        for m in metrics:
+            m_name = m.name()
+            if m_name == PROC_PID_STATUS_INFO_METRIC_NAME:
+                pmce.ProcPidStatusInfoMetric = m.metric
     else:
         pmce.ProcPidStatusInfoMetric = ""
-    if procIo is not None:
-        pmce.ProcIo = procIo
+    if proc_pid_io is not None:
+        pmce.ProcIo = proc_pid_io
     if rawCgroup is not None:
         pmce.RawCgroup = rawCgroup
     if pmce.RawCgroup is not None:
         pmce._procCgroups = procfs.proc_cgroup.ProcPidCgroups(pmce.RawCgroup)
-        pmce.ProcPidCgroupMetrics = set(
-            m.metric
-            for m in proc_pid_cgroup_metrics.proc_pid_cgroup_metrics(
-                pmce._procCgroups, pmce.CommonLabels
-            )
-        )
+        metrics = generate_proc_pid_cgroup_metrics(pmce._procCgroups, pmce.CommonLabels)
+        pmce.ProcPidCgroupMetrics = set(m.metric for m in metrics)
     else:
         pmce.ProcPidCgroupMetrics = set()
     if rawCmdline is not None:
         pmce.RawCmdline = rawCmdline
     if pmce.RawCmdline is not None:
         pmce._procCmdline = procfs.proc_cmdline.ProcPidCmdline(pmce.RawCmdline)
-        pmce.ProcPidCmdlineMetric = proc_pid_cmdline_metrics.proc_pid_cmdline_metrics(
+        pmce.ProcPidCmdlineMetric = generate_proc_pid_cmdline_metrics(
             pmce._procCmdline, pmce.CommonLabels
         ).metric
     else:
         pmce.ProcPidCmdlineMetric = ""
+    if (
+        prev_pmce is not None
+        and pmce.ProcStat is not None
+        and prev_pmce.ProcStat is not None
+    ):
+        pmce.DeltaUTime = pmce.ProcStat.UTime - prev_pmce.ProcStat.UTime
+        pmce.DeltaSTime = pmce.ProcStat.STime - prev_pmce.ProcStat.STime
 
 
 def generate_pmce_full_metrics(
@@ -152,85 +188,59 @@ def generate_pmce_full_metrics(
     ts: Optional[int] = None,
     prev_pmce: Optional[PidMetricsCacheEntry] = None,
     prev_ts: Optional[int] = None,
-    _full_metrics: bool = False,
 ) -> List[Metric]:
     if ts is None:
-        ts = pmce.Timestamp
-    metrics = []
-
-    for pmce_stat_field, metrics_fn_map in pmce_field_to_metrics_fn_map.items():
-        for metric_fn, require_history in metrics_fn_map.items():
-            metric_or_metrics = None
-            if require_history:
-                if prev_pmce is not None:
-                    metric_or_metrics = metric_fn(
-                        getattr(pmce, pmce_stat_field),
-                        getattr(prev_pmce, pmce_stat_field),
-                        pmce.CommonLabels,
-                        ts=ts,
-                        prev_ts=prev_ts,
-                        _full_metrics=_full_metrics,
-                    )
-            else:
-                metric_or_metrics = metric_fn(
-                    getattr(pmce, pmce_stat_field), pmce.CommonLabels, ts=ts
-                )
-            if metric_or_metrics is not None:
-                if isinstance(metric_or_metrics, list):
-                    metrics.extend(metric_or_metrics)
-                else:
-                    metrics.append(metric_or_metrics)
-
-    return metrics
-
-
-def generate_pcme_pseudo_categorical_change_metrics(
-    pmce: PidMetricsCacheEntry,
-    prev_pmce: PidMetricsCacheEntry,
-    ts: Optional[int] = None,
-    clear_only: bool = False,
-) -> List[Metric]:
-    if ts is None:
-        ts = pmce.Timestamp
-
-    prev_metrics_set = prev_pmce.ProcPidCgroupMetrics | set(
-        [
-            prev_pmce.ProcPidCmdlineMetric,
-            prev_pmce.ProcPidStatStateMetric,
-            prev_pmce.ProcPidStatInfoMetric,
-            prev_pmce.ProcPidStatusInfoMetric,
+        ts = prometheus_ts_to_ts(pmce.Timestamp)
+    if prev_pmce is not None and prev_ts is None:
+        prev_ts = prometheus_ts_to_ts(prev_pmce.Timestamp)
+    # All the metrics corresponding to the current state:
+    metrics = (
+        generate_proc_pid_cgroup_metrics(pmce._procCgroups, pmce.CommonLabels, ts=ts)
+        + [
+            generate_proc_pid_cmdline_metrics(
+                pmce._procCmdline, pmce.CommonLabels, ts=ts
+            )
         ]
+        + generate_proc_pid_io_metrics(pmce.ProcIo, pmce.CommonLabels, ts=ts)
+        + generate_proc_pid_stat_metrics(
+            pmce.ProcStat,
+            pmce.CommonLabels,
+            ts=ts,
+            prev_proc_pid_stat=prev_pmce.ProcStat if prev_pmce is not None else None,
+            prev_ts=prev_ts,
+        )
+        + generate_proc_pid_status_metrics(
+            pmce.ProcStatus,
+            pmce.CommonLabels,
+            ts=ts,
+        )
     )
-
-    crt_metrics_set = pmce.ProcPidCgroupMetrics | set(
-        [
-            pmce.ProcPidCmdlineMetric,
-            pmce.ProcPidStatStateMetric,
-            pmce.ProcPidStatInfoMetric,
-            pmce.ProcPidStatusInfoMetric,
-        ]
-    )
-
-    metrics = []
-    for metric in prev_metrics_set - crt_metrics_set:
-        metrics.append(Metric(metric=metric, val=0, ts=ts))
-    if not clear_only:
-        for metric in crt_metrics_set - prev_metrics_set:
-            metrics.append(Metric(metric=metric, val=1, ts=ts))
-    return metrics
-
-
-def generate_pcme_pseudo_categorical_clear_metrics(
-    pmce: PidMetricsCacheEntry,
-    ts: Optional[int] = None,
-) -> List[Metric]:
-    if ts is None:
-        ts = pmce.Timestamp
-    metrics = []
-    for metric in pmce.ProcPidCgroupMetrics:
-        metrics.append(Metric(metric=metric, val=0, ts=ts))
-    metrics.append(Metric(metric=pmce.ProcPidCmdlineMetric, val=0, ts=ts))
-    metrics.append(Metric(metric=pmce.ProcPidStatStateMetric, val=0, ts=ts))
-    metrics.append(Metric(metric=pmce.ProcPidStatInfoMetric, val=0, ts=ts))
-    metrics.append(Metric(metric=pmce.ProcPidStatusInfoMetric, val=0, ts=ts))
+    # Additional metrics required to clear out-of-scope pseudo-categorical ones:
+    if prev_pmce is not None:
+        changed_pseudo_categorical_metrics = (
+            prev_pmce.ProcPidCgroupMetrics
+            | set(
+                [
+                    prev_pmce.ProcPidCmdlineMetric,
+                    prev_pmce.ProcPidStatStateMetric,
+                    prev_pmce.ProcPidStatInfoMetric,
+                    prev_pmce.ProcPidStatusInfoMetric,
+                ]
+            )
+        ) - (
+            pmce.ProcPidCgroupMetrics
+            | set(
+                [
+                    pmce.ProcPidCmdlineMetric,
+                    pmce.ProcPidStatStateMetric,
+                    pmce.ProcPidStatInfoMetric,
+                    pmce.ProcPidStatusInfoMetric,
+                ]
+            )
+        )
+        prom_ts = ts_to_prometheus_ts(ts)
+        metrics.extend(
+            Metric(metric=metric, val=0, ts=prom_ts)
+            for metric in changed_pseudo_categorical_metrics
+        )
     return metrics

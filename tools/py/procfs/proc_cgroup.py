@@ -9,7 +9,6 @@ import time
 from typing import List, Optional
 
 from metrics_common_test import TestdataProcfsRoot
-from tools_common import ts_to_prometheus_ts
 
 from .common import ProcfsStructBase, proc_pid_dir
 
@@ -63,5 +62,5 @@ def load_proc_pid_cgroups(
         raw = f.read()
     ts = os.stat(stat_path).st_mtime if _use_ts_from_file else time.time()
     procPidCgroups = ProcPidCgroups(raw)
-    procPidCgroups._ts = ts_to_prometheus_ts(ts)
+    procPidCgroups._ts = ts
     return procPidCgroups
