@@ -50,9 +50,9 @@ proc_pid_stat_categorical_metric_names = [
 def generate_proc_pid_stat_metrics(
     proc_pid_stat: procfs.ProcStat,
     common_labels: str,
-    ts: Optional[int] = None,
+    ts: Optional[float] = None,
     prev_proc_pid_stat: Optional[procfs.ProcStat] = None,
-    prev_ts: Optional[int] = None,
+    prev_ts: Optional[float] = None,
 ) -> List[Metric]:
     if ts is None:
         ts = proc_pid_stat._ts

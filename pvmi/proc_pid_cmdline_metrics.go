@@ -23,7 +23,6 @@ var pidCmdlineMetricFmt = fmt.Sprintf(
 // Invoke for new/changed cmdline:
 func updateProcPidCmdlineMetric(
 	pmce *PidMetricsCacheEntry,
-	rawCmdline []byte,
 	promTs string,
 	buf *bytes.Buffer,
 	generatedCount *uint64,
@@ -38,7 +37,7 @@ func updateProcPidCmdlineMetric(
 	cmdline := strings.TrimSpace(
 		string(
 			bytes.ReplaceAll(
-				bytes.TrimSuffix(rawCmdline, nullByte),
+				bytes.TrimSuffix(pmce.RawCmdline, nullByte),
 				nullByte,
 				spaceByte,
 			),

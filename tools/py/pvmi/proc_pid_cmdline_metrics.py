@@ -17,7 +17,7 @@ proc_pid_cmdline_categorical_metric_names = [
 def generate_proc_pid_cmdline_metrics(
     proc_pid_cmdline: procfs.ProcPidCmdline,
     common_labels: str,
-    ts: Optional[int] = None,
+    ts: Optional[float] = None,
 ) -> Metric:
     if ts is None:
         ts = proc_pid_cmdline._ts

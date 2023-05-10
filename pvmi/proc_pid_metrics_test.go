@@ -4,9 +4,11 @@ package pvmi
 
 import (
 	"bytes"
+	"flag"
 	"fmt"
 	"path"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -19,6 +21,15 @@ import (
 
 	"github.com/eparparita/procfs-victoriametrics-importer/testutils"
 )
+
+const (
+	PID_METRICS_TEST_CASE_LOAD_FILE_NAME       = "proc_pid_metrics_test_case_load.json"
+	PID_METRICS_TEST_CASES_FILE_NAME           = "proc_pid_metrics_test_cases.json"
+	PID_METRICS_DELTA_TEST_CASES_FILE_NAME     = "proc_pid_metrics_delta_test_cases.json"
+	ALL_PID_METRICS_DELTA_TEST_CASES_FILE_NAME = "proc_all_pid_metrics_delta_test_cases.json"
+)
+
+var dumpTestCase = flag.Bool("dump-testcase", false, "Dump test case for error")
 
 type PidMetricsTestCase struct {
 	Name              string
@@ -75,43 +86,50 @@ func (tm *PidMetricsTestTimeNowMock) addTs(ts int64) {
 	tm.prometheusTs = append(tm.prometheusTs, ts)
 }
 
-const (
-	PID_METRICS_TEST_CASE_LOAD_FILE_NAME       = "proc_pid_metrics_test_case_load.json"
-	PID_METRICS_TEST_CASES_FILE_NAME           = "proc_pid_metrics_test_cases.json"
-	PID_METRICS_DELTA_TEST_CASES_FILE_NAME     = "proc_pid_metrics_delta_test_cases.json"
-	ALL_PID_METRICS_DELTA_TEST_CASES_FILE_NAME = "proc_all_pid_metrics_delta_test_cases.json"
-)
-
-func TestPidMetricsTestCaseLoad(t *testing.T) {
-	tc := PidMetricsTestCase{}
-
-	err := testutils.LoadJsonFile(
-		path.Join(TestdataTestCasesDir, PID_METRICS_TEST_CASE_LOAD_FILE_NAME),
-		&tc,
-	)
-	if err != nil {
-		t.Fatal(err)
-	}
+func dumpPidMetricsTestCase(pmtc *PidMetricsTestCase) string {
 	buf := &bytes.Buffer{}
 	dumper := dump.NewDumper(buf, 3)
 	dumper.NoColor = true
 	dumper.ShowFlag = dump.Fnopos
-	dumper.Dump(tc)
-	t.Logf("%#v loaded into:\n%s\n", PID_METRICS_TEST_CASE_LOAD_FILE_NAME, buf.String())
+	dumper.Dump(pmtc)
+	return buf.String()
+}
+
+// DiffReporter is a simple custom reporter that only records differences
+// detected during comparison.
+type DiffReporter struct {
+	path  cmp.Path
+	diffs []string
+}
+
+func (r *DiffReporter) PushStep(ps cmp.PathStep) {
+	r.path = append(r.path, ps)
+}
+
+func (r *DiffReporter) Report(rs cmp.Result) {
+	if !rs.Equal() {
+		vx, vy := r.path.Last().Values()
+		r.diffs = append(r.diffs, fmt.Sprintf("%#v:\n\t-: %+v\n\t+: %+v\n", r.path, vx, vy))
+	}
+}
+
+func (r *DiffReporter) PopStep() {
+	r.path = r.path[:len(r.path)-1]
+}
+
+func (r *DiffReporter) String() string {
+	return strings.Join(r.diffs, "\n")
 }
 
 func clonePmce(pmce *PidMetricsCacheEntry) *PidMetricsCacheEntry {
 	new_pmce := &PidMetricsCacheEntry{
 		PassNum:                 pmce.PassNum,
 		RefreshCycleNum:         pmce.RefreshCycleNum,
-		ProcStat:                &procfs.ProcStat{},
-		ProcStatus:              &procfs.ProcStatus{},
-		RawCgroup:               make([]byte, len(pmce.RawCgroup)),
-		RawCmdline:              make([]byte, len(pmce.RawCmdline)),
-		ProcIo:                  &procfs.ProcIO{},
-		DeltaUTime:              pmce.DeltaUTime,
-		DeltaSTime:              pmce.DeltaSTime,
-		ValidDeltaTime:          pmce.ValidDeltaTime,
+		CrtProcStatIndex:        pmce.CrtProcStatIndex,
+		CrtProcStatusIndex:      pmce.CrtProcStatusIndex,
+		CrtProcIoIndex:          pmce.CrtProcIoIndex,
+		PrevUTimePct:            pmce.PrevUTimePct,
+		PrevSTimePct:            pmce.PrevSTimePct,
 		Timestamp:               pmce.Timestamp,
 		CommonLabels:            pmce.CommonLabels,
 		ProcPidCmdlineMetric:    pmce.ProcPidCmdlineMetric,
@@ -119,11 +137,28 @@ func clonePmce(pmce *PidMetricsCacheEntry) *PidMetricsCacheEntry {
 		ProcPidStatInfoMetric:   pmce.ProcPidStatInfoMetric,
 		ProcPidStatusInfoMetric: pmce.ProcPidStatusInfoMetric,
 	}
-	*(new_pmce.ProcStat) = *(pmce.ProcStat)
-	*(new_pmce.ProcStatus) = *(pmce.ProcStatus)
-	copy(new_pmce.RawCgroup, pmce.RawCgroup)
-	copy(new_pmce.RawCmdline, pmce.RawCmdline)
-	*(new_pmce.ProcIo) = *(pmce.ProcIo)
+	for i := 0; i < 2; i++ {
+		if pmce.ProcStat[i] != nil {
+			new_pmce.ProcStat[i] = new(procfs.ProcStat)
+			*new_pmce.ProcStat[i] = *pmce.ProcStat[i]
+		}
+		if pmce.ProcStatus[i] != nil {
+			new_pmce.ProcStatus[i] = new(procfs.ProcStatus)
+			*new_pmce.ProcStatus[i] = *pmce.ProcStatus[i]
+		}
+		if pmce.ProcIo[i] != nil {
+			new_pmce.ProcIo[i] = new(procfs.ProcIO)
+			*new_pmce.ProcIo[i] = *pmce.ProcIo[i]
+		}
+	}
+	if pmce.RawCgroup != nil {
+		new_pmce.RawCgroup = make([]byte, len(pmce.RawCgroup), cap(pmce.RawCgroup))
+		copy(new_pmce.RawCgroup, pmce.RawCgroup)
+	}
+	if pmce.RawCmdline != nil {
+		new_pmce.RawCmdline = make([]byte, len(pmce.RawCmdline), cap(pmce.RawCmdline))
+		copy(new_pmce.RawCmdline, pmce.RawCmdline)
+	}
 	if pmce.ProcPidCgroupMetrics != nil {
 		new_pmce.ProcPidCgroupMetrics = map[string]bool{}
 		for k, v := range pmce.ProcPidCgroupMetrics {
@@ -155,7 +190,7 @@ func addPidMetricsTestCase(
 // GeneratePidMetrics tests:
 func runPidMetricsTestCase(
 	t *testing.T,
-	pmtc PidMetricsTestCase,
+	pmtc *PidMetricsTestCase,
 	pmc PidMetricsCache,
 	psc PidStarttimeCache,
 	tm *PidMetricsTestTimeNowMock,
@@ -176,6 +211,7 @@ func runPidMetricsTestCase(
 		passNum:           pmtc.WantPmce.PassNum,
 		fullMetricsFactor: pmtc.FullMetricsFactor,
 		activeThreshold:   pmtc.ActiveThreshold,
+		fileBuf:           make([]byte, PROC_PID_FILE_BUFFER_MAX_LENGTH),
 		hostname:          TestHostname,
 		job:               TestJob,
 		clktckSec:         TestClktckSec,
@@ -194,14 +230,20 @@ func runPidMetricsTestCase(
 		t.Errorf("missing %T[%v] for %s", pmc, pidTid, t.Name())
 		return
 	}
-	if diff := cmp.Diff(
+
+	var r DiffReporter
+	if !cmp.Equal(
 		pmtc.WantPmce,
 		gotPmce,
 		cmpopts.IgnoreUnexported(PidMetricsCacheEntry{}),
 		cmpopts.IgnoreUnexported(procfs.ProcStat{}),
 		cmpopts.IgnoreUnexported(procfs.ProcStatus{}),
-	); diff != "" {
-		t.Errorf("mismatch (-want +got):\n%s", diff)
+		cmp.Reporter(&r),
+	) {
+		if *dumpTestCase {
+			t.Logf("%s\n", dumpPidMetricsTestCase(pmtc))
+		}
+		t.Errorf("Cache mismatch (-want +got):\n%s", r.String())
 	}
 	wantMetrics := testutils.DuplicateStrings(pmtc.WantMetrics, true)
 	gotMetrics := testutils.BufToStrings(buf, true)
@@ -223,7 +265,6 @@ func runPidMetricsTestCases(
 	tm := &PidMetricsTestTimeNowMock{keepMin: false}
 	for _, pmtc := range pmtcList {
 		pmc := PidMetricsCache{}
-		addPidMetricsTestCase(&pmtc, pmc, tm, nil)
 		psc := PidStarttimeCache{}
 
 		prevPmceRefreshCycleNum := "N/A"
@@ -245,7 +286,10 @@ func runPidMetricsTestCases(
 				prevPmceRefreshCycleNum,
 				wantPmceRefreshCycleNum,
 			),
-			func(t *testing.T) { runPidMetricsTestCase(t, pmtc, pmc, psc, tm) },
+			func(t *testing.T) {
+				addPidMetricsTestCase(&pmtc, pmc, tm, nil)
+				runPidMetricsTestCase(t, &pmtc, pmc, psc, tm)
+			},
 		)
 	}
 }
@@ -319,6 +363,7 @@ func runAllPidMetricsTestCases(
 			psc:               psc,
 			passNum:           passNum,
 			fullMetricsFactor: fullMetricsFactor,
+			fileBuf:           make([]byte, PROC_PID_FILE_BUFFER_MAX_LENGTH),
 			hostname:          TestHostname,
 			job:               TestJob,
 			clktckSec:         TestClktckSec,

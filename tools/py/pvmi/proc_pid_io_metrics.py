@@ -14,11 +14,10 @@ metrics_fn_map = {}
 def generate_proc_pid_io_metrics(
     proc_pid_io: procfs.ProcIO,
     common_labels: str = "",
-    ts: Optional[int] = None,
+    ts: Optional[float] = None,
 ) -> List[Metric]:
     if ts is None:
         ts = proc_pid_io._ts
-    labels_sep = "," if common_labels else ""
     prom_ts = ts_to_prometheus_ts(ts)
     return [
         Metric(

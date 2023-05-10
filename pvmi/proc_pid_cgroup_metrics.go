@@ -27,14 +27,13 @@ var pidCgroupMetricFmt = fmt.Sprintf(
 // Invoke for new/changed cgroup info:
 func updateProcPidCgroupMetric(
 	pmce *PidMetricsCacheEntry,
-	rawCgroup []byte,
 	promTs string,
 	buf *bytes.Buffer,
 	generatedCount *uint64,
 ) error {
-	cgroups, err := procfs.ParseCgroups(rawCgroup)
+	cgroups, err := procfs.ParseCgroups(pmce.RawCgroup)
 	if err != nil {
-		return err
+		return fmt.Errorf("rawCgroup=%q %v: %s", pmce.RawCgroup, pmce.RawCgroup, err)
 	}
 	// Build the lists of new metrics and of those that went out-of-scope:
 	outOfScopeProcPidCgroupMetrics := pmce.ProcPidCgroupMetrics

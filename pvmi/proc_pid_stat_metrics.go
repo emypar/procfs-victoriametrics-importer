@@ -5,8 +5,6 @@ package pvmi
 import (
 	"bytes"
 	"fmt"
-
-	"github.com/prometheus/procfs"
 )
 
 const (
@@ -85,7 +83,6 @@ var pidStatInfoMetricFmt string = fmt.Sprintf(
 // Invoke for new/change in procStat state:
 func updateProcPidStatStateMetric(
 	pmce *PidMetricsCacheEntry,
-	procStat *procfs.ProcStat,
 	promTs string,
 	buf *bytes.Buffer,
 	generatedCount *uint64,
@@ -98,6 +95,7 @@ func updateProcPidStatStateMetric(
 		}
 	}
 	// Update the metric:
+	procStat := pmce.ProcStat[pmce.CrtProcStatIndex]
 	pmce.ProcPidStatStateMetric = fmt.Sprintf(
 		pidStatStateMetricFmt,
 		pmce.CommonLabels,
@@ -109,7 +107,6 @@ func updateProcPidStatStateMetric(
 // Invoke for new/change in procStat info:
 func updateProcPidStatInfoMetric(
 	pmce *PidMetricsCacheEntry,
-	procStat *procfs.ProcStat,
 	promTs string,
 	buf *bytes.Buffer,
 	generatedCount *uint64,
@@ -122,6 +119,7 @@ func updateProcPidStatInfoMetric(
 		}
 	}
 	// Update the metric:
+	procStat := pmce.ProcStat[pmce.CrtProcStatIndex]
 	pmce.ProcPidStatInfoMetric = fmt.Sprintf(
 		pidStatInfoMetricFmt,
 		pmce.CommonLabels,

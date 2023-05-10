@@ -26,6 +26,7 @@ package pvmi
 import (
 	"bytes"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,6 +41,9 @@ const (
 	PROC_PID_METRIC_STARTTIME_LABEL_NAME   = "starttime"
 	PROC_PID_METRIC_TID_LABEL_NAME         = "tid"
 	PROC_PID_METRIC_T_STARTTIME_LABEL_NAME = "t_starttime"
+
+	// The max length of the buffer used to read files like cmdline and cgroup:
+	PROC_PID_FILE_BUFFER_MAX_LENGTH = 0x1000
 )
 
 var PidMetricsLog = Log.WithField(
@@ -88,8 +92,8 @@ type PidMetricsContext struct {
 	fullMetricsFactor int
 	// Full metrics will be generated for a PID[,TID] when its refreshCycleNum
 	// == 0. The latter is a counter % fullMetricsFactor, which is initialized
-	// when the process/thread is discovered. To stagger the the full metrics
-	// cycles across all PIDs, the counter is initialized from a seed which is
+	// when the process/thread is discovered. To stagger the full metrics cycles
+	// across all PIDs, the counter is initialized from a seed which is
 	// incremented, also % fullMetricsFactor, after each use.
 	refreshCycleNumSeed int
 	// Active process threshold. A process/thread is deemed active if its delta(UTime
@@ -102,6 +106,11 @@ type PidMetricsContext struct {
 	wChan chan *bytes.Buffer
 	// Stats struct:
 	pmStats *PidMetricsStats
+	// A buffer for reading files that are cached in raw format, like cmdline
+	// and cgroup. Such files do not change very often so the typical paradigm
+	// is read, compare against cached (previous) and discard because no change.
+	// That makes the buffer reusable across processes/threads.
+	fileBuf []byte
 	// The following are useful for testing, in lieu of mocks:
 	hostname  string
 	job       string
@@ -166,6 +175,7 @@ func NewPidMetricsContext(
 		activeThreshold:   activeThreshold,
 		passNum:           0,
 		wChan:             wChan,
+		fileBuf:           make([]byte, PROC_PID_FILE_BUFFER_MAX_LENGTH),
 		hostname:          hostname,
 		job:               job,
 		clktckSec:         clktckSec,
@@ -197,27 +207,34 @@ func (pidMetricsCtx *PidMetricsContext) GetRefreshCycleNumSeed() int {
 	return refreshCycleNumSeed
 }
 
-// Previous pass cache, required for pseudo-categorical metrics and for %CPU.
+// Previous pass cache, required for delta strategy, pseudo-categorical metrics
+// and for %CPU.
 type PidMetricsCacheEntry struct {
 	// The pass# when this entry was updated, needed for detecting out-of-scope
 	// PIDs:
 	PassNum uint64
 	// Refresh cycle#, see refreshCycleNumSeed in PidMetricsContext:
 	RefreshCycleNum int
-	// Cache parsed data from /proc:
-	ProcStat   *procfs.ProcStat
-	ProcStatus *procfs.ProcStatus
-	ProcIo     *procfs.ProcIO
-	// Cache raw data from /proc, for info that is expensive to parse and which
+	// In order to avoid constant memory allocation and garbage collection use
+	// the [2]*Object dual buffer approach for the cached information. Each pass
+	// will have a pair of crt, prev indices (crt in {0,1}, prev=1-crt) flipped
+	// at the beginning of the pass. The new state is read into Object[crt] and
+	// the previous state is available in Object[prev=1-crt].
+	ProcStat           [2]*procfs.ProcStat
+	CrtProcStatIndex   int
+	ProcStatus         [2]*procfs.ProcStatus
+	CrtProcStatusIndex int
+	ProcIo             [2]*procfs.ProcIO
+	CrtProcIoIndex     int
+	// Cache raw data from /proc for info that is expensive to parse and which
 	// doesn't change often:
 	RawCgroup  []byte
 	RawCmdline []byte
-	// Cache delta cpu time, needed for delta strategy for %CPU metrics; delta
-	// cpu time is (STime - prevSTime)/(UTime - prevUTime). Since this is
-	// available only from 2nd scan onwards, keep a flag indicating that this
-	// information is available.
-	DeltaUTime, DeltaSTime uint
-	ValidDeltaTime         bool
+	// Cache %CPU time, needed for delta strategy. If either of the % changes
+	// then all 3 (system, user, total) are being generated. A negative value
+	// stands for invalid (this information is available at the end of the 2nd
+	// scan).
+	PrevUTimePct, PrevSTimePct float64
 	// Stats acquisition time stamp (Prometheus style, milliseconds since the
 	// epoch):
 	Timestamp int64
@@ -257,8 +274,8 @@ func (psc PidStarttimeCache) resolvePidStarttime(
 		// - next, try as the main thread:
 		pmce = pmc[PidTidPair{pid: pid, tid: pid}]
 	}
-	if pmce != nil {
-		starttime = pmce.ProcStat.Starttime
+	if pmce != nil && pmce.ProcStat[1-pmce.CrtProcStatIndex] != nil {
+		starttime = pmce.ProcStat[1-pmce.CrtProcStatIndex].Starttime
 	} else {
 		// Last resort, straight from /proc:
 		proc, err := fs.Proc(pid)
@@ -294,16 +311,19 @@ func GeneratePidMetrics(
 	pidMetricsCtx *PidMetricsContext,
 	buf *bytes.Buffer,
 ) error {
-	var proc procfs.Proc
-	var procStat *procfs.ProcStat
-	var procStatus *procfs.ProcStatus
-	var procIo *procfs.ProcIO
-	var rawCgroup []byte
-	var rawCmdline []byte
-	var err error
-	var procDir string
-	var generatedCount uint64 = 0
-	var deltaUTime, deltaSTime uint
+	var (
+		proc                       procfs.Proc
+		procStat, prevProcStat     *procfs.ProcStat
+		savedCrtProcStatIndex      int
+		procStatus, prevProcStatus *procfs.ProcStatus
+		savedCrtProcStatusIndex    int
+		procIo, prevProcIo         *procfs.ProcIO
+		savedCrtProcIoIndex        int
+		err                        error
+		procDir                    string
+		generatedCount             uint64
+		deltaUTime, deltaSTime     uint
+	)
 
 	pmc := pidMetricsCtx.pmc
 	psc := pidMetricsCtx.psc
@@ -313,10 +333,27 @@ func GeneratePidMetrics(
 	isForPid := tid == 0
 	isActive, fullMetrics, prevDeleted := false, pidMetricsCtx.fullMetricsFactor <= 1, false
 
+	// Keep track of changed pseudo-categorical metrics, needed to generate
+	// metrics on updates only.
+	cgroupChanged := false
+	cmdlineChanged := false
+	statStateChanged := false
+	statInfoChanged := false
+	statusInfoChanged := false
+
 	// Cache entry: new v. update:
 	pmce, exists := pmc[pidTid]
 	bufInitLen := buf.Len()
 
+	if exists {
+		savedCrtProcStatIndex = pmce.CrtProcStatIndex
+		savedCrtProcStatusIndex = pmce.CrtProcStatusIndex
+		savedCrtProcIoIndex = pmce.CrtProcIoIndex
+	}
+
+	// On return:
+	//  - update stats
+	//  - update/restore state depending on error
 	defer func() {
 		if pmStats != nil {
 			if isForPid {
@@ -343,10 +380,18 @@ func GeneratePidMetrics(
 			}
 		}
 		if err == nil {
+			pmce.PassNum = pidMetricsCtx.passNum
 			if !exists && pmce != nil {
 				pmc[pidTid] = pmce
 			}
 		} else {
+			// Restore the current index for dual buffers:
+			if exists && pmce != nil {
+				pmce.CrtProcStatIndex = savedCrtProcStatIndex
+				pmce.CrtProcStatusIndex = savedCrtProcStatusIndex
+				pmce.CrtProcIoIndex = savedCrtProcIoIndex
+			}
+			// Discard metrics generated thus far:
 			if buf.Len() > bufInitLen {
 				buf.Truncate(bufInitLen)
 			}
@@ -363,14 +408,34 @@ func GeneratePidMetrics(
 	if err != nil {
 		return err
 	}
-	procStatRet, err := proc.Stat()
+
+	if !exists {
+		pmce = &PidMetricsCacheEntry{
+			CrtProcStatIndex:   1,
+			CrtProcStatusIndex: 1,
+			CrtProcIoIndex:     1,
+			PrevUTimePct:       -1.,
+			PrevSTimePct:       -1.,
+		}
+		if pidMetricsCtx.fullMetricsFactor > 1 {
+			pmce.RefreshCycleNum = pidMetricsCtx.GetRefreshCycleNumSeed()
+		}
+	}
+
+	prevProcStat = pmce.ProcStat[pmce.CrtProcStatIndex]
+	pmce.CrtProcStatIndex = 1 - pmce.CrtProcStatIndex
+	procStat = pmce.ProcStat[pmce.CrtProcStatIndex]
+	if procStat == nil {
+		procStat = &procfs.ProcStat{}
+		pmce.ProcStat[pmce.CrtProcStatIndex] = procStat
+	}
+	_, err = proc.StatWithStruct(procStat)
 	if err != nil {
 		return err
 	}
-	procStat = &procStatRet
-	if exists && pmce.ProcStat.Starttime != procStat.Starttime {
-		// A different instance of the same PID/TID, clear the previous one's
-		// pseudo-categorical metrics:
+	if exists && procStat.Starttime != prevProcStat.Starttime {
+		// A different instance of the same PID/TID, generate clear metrics for
+		// the previous one's pseudo-categorical ones:
 		clearProcPidMetrics(
 			pmce,
 			strconv.FormatInt(pidMetricsCtx.timeNow().UnixMilli(), 10),
@@ -379,17 +444,24 @@ func GeneratePidMetrics(
 		)
 		// Readjust the buffer recovery mark to accommodate the above:
 		bufInitLen = buf.Len()
-
-		delete(pmc, pidTid)
-		pmce, exists, prevDeleted = nil, false, true
+		// Clear cached pseudo-categorical metrics
+		pmce.CommonLabels = ""
+		pmce.ProcPidCgroupMetrics = nil
+		pmce.ProcPidCmdlineMetric = ""
+		pmce.ProcPidStatInfoMetric = ""
+		pmce.ProcPidStatStateMetric = ""
+		pmce.ProcPidStatusInfoMetric = ""
+		exists = false
 	}
 
 	if exists {
-		deltaUTime = procStat.UTime - pmce.ProcStat.UTime
-		deltaSTime = procStat.STime - pmce.ProcStat.STime
+		// Check process active status:
+		deltaUTime = procStat.UTime - prevProcStat.UTime
+		deltaSTime = procStat.STime - prevProcStat.STime
 		if pidMetricsCtx.activeThreshold == 0 || (deltaUTime+deltaSTime) >= pidMetricsCtx.activeThreshold {
 			isActive = true
 		}
+		// Check full refresh cycle:
 		if pidMetricsCtx.fullMetricsFactor > 1 {
 			fullMetrics = pmce.RefreshCycleNum == 0
 			pmce.RefreshCycleNum += 1
@@ -401,24 +473,62 @@ func GeneratePidMetrics(
 		fullMetrics = true
 	}
 
-	if isActive || fullMetrics { // || !exists {
-		procStatusRet, err := proc.NewStatus()
+	if isActive || fullMetrics {
+		prevProcStatus = pmce.ProcStatus[pmce.CrtProcStatusIndex]
+		pmce.CrtProcStatusIndex = 1 - pmce.CrtProcStatusIndex
+		procStatus = pmce.ProcStatus[pmce.CrtProcStatusIndex]
+		if procStatus == nil {
+			procStatus = &procfs.ProcStatus{}
+			pmce.ProcStatus[pmce.CrtProcStatusIndex] = procStatus
+		}
+		_, err = proc.NewStatusWithStruct(procStatus)
 		if err != nil {
 			return err
 		}
-		procStatus = &procStatusRet
-		procIoRet, err := proc.IO()
+
+		prevProcIo = pmce.ProcIo[pmce.CrtProcIoIndex]
+		pmce.CrtProcIoIndex = 1 - pmce.CrtProcIoIndex
+		procIo = pmce.ProcIo[pmce.CrtProcIoIndex]
+		if procIo == nil {
+			procIo = &procfs.ProcIO{}
+			pmce.ProcIo[pmce.CrtProcIoIndex] = procIo
+		}
+		_, err = proc.IOWithStruct(procIo)
 		if err != nil {
 			return err
 		}
-		procIo = &procIoRet
 	}
-	if fullMetrics { // || !exists {
-		rawCgroup, err = os.ReadFile(filepath.Join(procDir, "cgroup"))
+	if fullMetrics {
+		fileBuf := pidMetricsCtx.fileBuf
+
+		readRawFile := func(path string, dst *[]byte) (bool, error) {
+			f, err := os.Open(path)
+			if err != nil {
+				return false, fmt.Errorf("%s: %s", path, err)
+			}
+			b := fileBuf[:cap(fileBuf)]
+			n, err := f.Read(b)
+			f.Close()
+			if err != nil && err != io.EOF {
+				return false, fmt.Errorf("%s: %s", path, err)
+			}
+			b = b[:n]
+			if bytes.Equal(b, *dst) && *dst != nil {
+				return false, nil
+			}
+			if len(*dst) < n || *dst == nil {
+				*dst = make([]byte, n)
+			}
+			copy(*dst, b)
+			*dst = (*dst)[:n]
+			return true, nil
+		}
+
+		cgroupChanged, err = readRawFile(filepath.Join(procDir, "cgroup"), &pmce.RawCgroup)
 		if err != nil {
 			return err
 		}
-		rawCmdline, err = os.ReadFile(filepath.Join(procDir, "cmdline"))
+		cmdlineChanged, err = readRawFile(filepath.Join(procDir, "cmdline"), &pmce.RawCmdline)
 		if err != nil {
 			return err
 		}
@@ -429,22 +539,7 @@ func GeneratePidMetrics(
 	// As string, for metrics generation:
 	metricTs := strconv.FormatInt(timestamp, 10)
 
-	// Keep track of changed pseudo-categorical metrics, needed to generate
-	// metrics on updates only.
-	cgroupChanged := false
-	cmdlineChanged := false
-	statStateChanged := false
-	statInfoChanged := false
-	statusInfoChanged := false
-
 	if !exists {
-		pmce = &PidMetricsCacheEntry{
-			RawCgroup:  rawCgroup,
-			RawCmdline: rawCmdline,
-		}
-		if pidMetricsCtx.fullMetricsFactor > 1 {
-			pmce.RefreshCycleNum = pidMetricsCtx.GetRefreshCycleNumSeed()
-		}
 		if isForPid {
 			pmce.CommonLabels = fmt.Sprintf(
 				pidMetricCommonLabelsFmt,
@@ -470,7 +565,6 @@ func GeneratePidMetrics(
 		}
 		err = updateProcPidCgroupMetric(
 			pmce,
-			rawCgroup,
 			metricTs,
 			buf,
 			&generatedCount,
@@ -478,56 +572,54 @@ func GeneratePidMetrics(
 		if err != nil {
 			return err
 		}
-		updateProcPidCmdlineMetric(pmce, rawCmdline, metricTs, buf, &generatedCount)
-		updateProcPidStatStateMetric(pmce, procStat, metricTs, buf, &generatedCount)
-		updateProcPidStatInfoMetric(pmce, procStat, metricTs, buf, &generatedCount)
-		updateProcPidStatusInfoMetric(pmce, procStatus, metricTs, buf, &generatedCount)
+		updateProcPidCmdlineMetric(pmce, metricTs, buf, &generatedCount)
+		updateProcPidStatStateMetric(pmce, metricTs, buf, &generatedCount)
+		updateProcPidStatInfoMetric(pmce, metricTs, buf, &generatedCount)
+		updateProcPidStatusInfoMetric(pmce, metricTs, buf, &generatedCount)
 	} else {
 		// Check for changes in pseudo-categorical metrics:
-		pmceStat := pmce.ProcStat
-		if pmceStat.State != procStat.State {
-			updateProcPidStatStateMetric(pmce, procStat, metricTs, buf, &generatedCount)
+		if prevProcStat.State != procStat.State {
+			updateProcPidStatStateMetric(pmce, metricTs, buf, &generatedCount)
 			statStateChanged = true
 		}
-		if pmceStat.Comm != procStat.Comm ||
-			pmceStat.PPID != procStat.PPID ||
-			pmceStat.PGRP != procStat.PGRP ||
-			pmceStat.Session != procStat.Session ||
-			pmceStat.TTY != procStat.TTY ||
-			pmceStat.TPGID != procStat.TPGID ||
-			pmceStat.Flags != procStat.Flags ||
-			pmceStat.Priority != procStat.Priority ||
-			pmceStat.Nice != procStat.Nice ||
-			pmceStat.RTPriority != procStat.RTPriority ||
-			pmceStat.Policy != procStat.Policy {
-			updateProcPidStatInfoMetric(pmce, procStat, metricTs, buf, &generatedCount)
+		if prevProcStat.Comm != procStat.Comm ||
+			prevProcStat.PPID != procStat.PPID ||
+			prevProcStat.PGRP != procStat.PGRP ||
+			prevProcStat.Session != procStat.Session ||
+			prevProcStat.TTY != procStat.TTY ||
+			prevProcStat.TPGID != procStat.TPGID ||
+			prevProcStat.Flags != procStat.Flags ||
+			prevProcStat.Priority != procStat.Priority ||
+			prevProcStat.Nice != procStat.Nice ||
+			prevProcStat.RTPriority != procStat.RTPriority ||
+			prevProcStat.Policy != procStat.Policy {
+			updateProcPidStatInfoMetric(pmce, metricTs, buf, &generatedCount)
 			statInfoChanged = true
 		}
 
-		if procStatus != nil {
-			pmceStatus := pmce.ProcStatus
-			if pmceStatus.Name != procStatus.Name ||
-				pmceStatus.TGID != procStatus.TGID ||
-				pmceStatus.UIDs != procStatus.UIDs ||
-				pmceStatus.GIDs != procStatus.GIDs {
-				updateProcPidStatusInfoMetric(pmce, procStatus, metricTs, buf, &generatedCount)
+		if isActive || fullMetrics {
+			if prevProcStatus.Name != procStatus.Name ||
+				prevProcStatus.TGID != procStatus.TGID ||
+				prevProcStatus.UIDs != procStatus.UIDs ||
+				prevProcStatus.GIDs != procStatus.GIDs {
+				updateProcPidStatusInfoMetric(pmce, metricTs, buf, &generatedCount)
 				statusInfoChanged = true
 			}
 		}
 
-		if rawCgroup != nil && !bytes.Equal(pmce.RawCgroup, rawCgroup) {
-			err = updateProcPidCgroupMetric(pmce, rawCgroup, metricTs, buf, &generatedCount)
+		if cgroupChanged {
+			err = updateProcPidCgroupMetric(
+				pmce,
+				metricTs,
+				buf,
+				&generatedCount,
+			)
 			if err != nil {
 				return err
 			}
-			pmce.RawCgroup = rawCgroup
-			cgroupChanged = true
 		}
-
-		if rawCmdline != nil && !bytes.Equal(pmce.RawCmdline, rawCmdline) {
-			updateProcPidCmdlineMetric(pmce, rawCmdline, metricTs, buf, &generatedCount)
-			pmce.RawCmdline = rawCmdline
-			cmdlineChanged = true
+		if cmdlineChanged {
+			updateProcPidCmdlineMetric(pmce, metricTs, buf, &generatedCount)
 		}
 	}
 
@@ -570,10 +662,8 @@ func GeneratePidMetrics(
 	// Update numerical metrics:
 	commonLabels := pmce.CommonLabels
 
-	// procStat is always available:
-
 	// proc_pid_stat_minflt:
-	if fullMetrics || procStat.MinFlt != pmce.ProcStat.MinFlt {
+	if fullMetrics || procStat.MinFlt != prevProcStat.MinFlt {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %d %s\n",
@@ -586,7 +676,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_cminflt:
-	if fullMetrics || procStat.CMinFlt != pmce.ProcStat.CMinFlt {
+	if fullMetrics || procStat.CMinFlt != prevProcStat.CMinFlt {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %d %s\n",
@@ -599,7 +689,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_majflt:
-	if fullMetrics || procStat.MajFlt != pmce.ProcStat.MajFlt {
+	if fullMetrics || procStat.MajFlt != prevProcStat.MajFlt {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %d %s\n",
@@ -612,7 +702,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_cmajflt:
-	if fullMetrics || procStat.CMajFlt != pmce.ProcStat.CMajFlt {
+	if fullMetrics || procStat.CMajFlt != prevProcStat.CMajFlt {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %d %s\n",
@@ -625,7 +715,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_utime_seconds:
-	if fullMetrics || procStat.UTime != pmce.ProcStat.UTime {
+	if fullMetrics || procStat.UTime != prevProcStat.UTime {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %.06f %s\n",
@@ -638,7 +728,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_stime_seconds:
-	if fullMetrics || procStat.STime != pmce.ProcStat.STime {
+	if fullMetrics || procStat.STime != prevProcStat.STime {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %.06f %s\n",
@@ -651,7 +741,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_cutime_seconds:
-	if fullMetrics || procStat.CUTime != pmce.ProcStat.CUTime {
+	if fullMetrics || procStat.CUTime != prevProcStat.CUTime {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %.06f %s\n",
@@ -664,7 +754,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_cstime_seconds:
-	if fullMetrics || procStat.CSTime != pmce.ProcStat.CSTime {
+	if fullMetrics || procStat.CSTime != prevProcStat.CSTime {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %.06f %s\n",
@@ -676,40 +766,8 @@ func GeneratePidMetrics(
 		generatedCount += 1
 	}
 
-	// %CPU, but only if there was a previous pass and (full metrics or %CPU change):
-	validDeltaTime := pmce.ValidDeltaTime
-	if exists && (fullMetrics || !validDeltaTime || pmce.DeltaUTime != deltaUTime || pmce.DeltaSTime != deltaSTime) {
-		dTimeSec := float64(timestamp-pmce.Timestamp) / 1000. // Prometheus millisec -> sec
-		pCpuFactor := pidMetricsCtx.clktckSec / dTimeSec * 100.
-		fmt.Fprintf(
-			buf,
-			"%s{%s} %.02f %s\n",
-			PROC_PID_STAT_UTIME_PCT_METRIC_NAME,
-			commonLabels,
-			float64(deltaUTime)*pCpuFactor,
-			metricTs,
-		)
-		fmt.Fprintf(
-			buf,
-			"%s{%s} %.02f %s\n",
-			PROC_PID_STAT_STIME_PCT_METRIC_NAME,
-			commonLabels,
-			float64(deltaSTime)*pCpuFactor,
-			metricTs,
-		)
-		fmt.Fprintf(
-			buf,
-			"%s{%s} %.02f %s\n",
-			PROC_PID_STAT_CPU_TIME_PCT_METRIC_NAME,
-			commonLabels,
-			float64(deltaUTime+deltaSTime)*pCpuFactor,
-			metricTs,
-		)
-		generatedCount += 3
-	}
-
 	// proc_pid_stat_vsize:
-	if fullMetrics || procStat.VSize != pmce.ProcStat.VSize {
+	if fullMetrics || procStat.VSize != prevProcStat.VSize {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %d %s\n",
@@ -722,7 +780,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_rss:
-	if fullMetrics || procStat.RSS != pmce.ProcStat.RSS {
+	if fullMetrics || procStat.RSS != prevProcStat.RSS {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %d %s\n",
@@ -735,7 +793,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_rsslim:
-	if fullMetrics || procStat.RSSLimit != pmce.ProcStat.RSSLimit {
+	if fullMetrics || procStat.RSSLimit != prevProcStat.RSSLimit {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %d %s\n",
@@ -748,7 +806,7 @@ func GeneratePidMetrics(
 	}
 
 	// proc_pid_stat_cpu:
-	if fullMetrics || procStat.Processor != pmce.ProcStat.Processor {
+	if fullMetrics || procStat.Processor != prevProcStat.Processor {
 		fmt.Fprintf(
 			buf,
 			"%s{%s} %d %s\n",
@@ -759,235 +817,269 @@ func GeneratePidMetrics(
 		)
 		generatedCount += 1
 	}
-	pmce.ProcStat = procStat
+
+	// proc_pid_stat_*time_pct:
 	if exists {
-		pmce.DeltaUTime, pmce.DeltaSTime, pmce.ValidDeltaTime = deltaUTime, deltaSTime, true
+		// % = delta(XTime) * clktckSec / delta(time) * 100
+		//   = delta(XTime) * (clktckSec / delta(time) * 100)
+		//   = delta(XTime) *  \_______ pCpuFactor ________/
+		// pCpuFactor = clktckSec / delta(time) * 100
+		//            = clktckSec / (delta(prometheus time) / 1000) * 100
+		//            = clktckSec / delta(prometheus time) * 100000
+		pCpuFactor := pidMetricsCtx.clktckSec / float64(timestamp-pmce.Timestamp) * 100000.
+		UTimePct, STimePct := float64(deltaUTime)*pCpuFactor, float64(deltaSTime)*pCpuFactor
+		// Note: when comparing %, use the same precision as that used for display (2DP):
+		if fullMetrics ||
+			int(pmce.PrevUTimePct*100.) != int(UTimePct*100.) ||
+			int(pmce.PrevSTimePct*100.) != int(STimePct*100.) {
+			fmt.Fprintf(
+				buf,
+				"%s{%s} %.02f %s\n%s{%s} %.02f %s\n%s{%s} %.02f %s\n",
+				PROC_PID_STAT_UTIME_PCT_METRIC_NAME,
+				commonLabels,
+				UTimePct,
+				metricTs,
+				PROC_PID_STAT_STIME_PCT_METRIC_NAME,
+				commonLabels,
+				STimePct,
+				metricTs,
+				PROC_PID_STAT_CPU_TIME_PCT_METRIC_NAME,
+				commonLabels,
+				UTimePct+STimePct,
+				metricTs,
+			)
+			generatedCount += 3
+			pmce.PrevUTimePct, pmce.PrevSTimePct = UTimePct, STimePct
+		}
 	}
 
-	if procStatus != nil {
-		// proc_pid_status_vm_peak:
-		if fullMetrics || procStatus.VmPeak != pmce.ProcStatus.VmPeak {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_PEAK_METRIC_NAME,
-				commonLabels,
-				procStatus.VmPeak,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+	if isActive || fullMetrics {
+		if isForPid {
+			// proc_pid_status_vm_peak:
+			if fullMetrics || procStatus.VmPeak != prevProcStatus.VmPeak {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_PEAK_METRIC_NAME,
+					commonLabels,
+					procStatus.VmPeak,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_size:
-		if fullMetrics || procStatus.VmSize != pmce.ProcStatus.VmSize {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_SIZE_METRIC_NAME,
-				commonLabels,
-				procStatus.VmSize,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_size:
+			if fullMetrics || procStatus.VmSize != prevProcStatus.VmSize {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_SIZE_METRIC_NAME,
+					commonLabels,
+					procStatus.VmSize,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_lck:
-		if fullMetrics || procStatus.VmLck != pmce.ProcStatus.VmLck {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_LCK_METRIC_NAME,
-				commonLabels,
-				procStatus.VmLck,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_lck:
+			if fullMetrics || procStatus.VmLck != prevProcStatus.VmLck {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_LCK_METRIC_NAME,
+					commonLabels,
+					procStatus.VmLck,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_pin:
-		if fullMetrics || procStatus.VmPin != pmce.ProcStatus.VmPin {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_PIN_METRIC_NAME,
-				commonLabels,
-				procStatus.VmPin,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_pin:
+			if fullMetrics || procStatus.VmPin != prevProcStatus.VmPin {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_PIN_METRIC_NAME,
+					commonLabels,
+					procStatus.VmPin,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_hwm:
-		if fullMetrics || procStatus.VmHWM != pmce.ProcStatus.VmHWM {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_HWM_METRIC_NAME,
-				commonLabels,
-				procStatus.VmHWM,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_hwm:
+			if fullMetrics || procStatus.VmHWM != prevProcStatus.VmHWM {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_HWM_METRIC_NAME,
+					commonLabels,
+					procStatus.VmHWM,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_rss:
-		if fullMetrics || procStatus.VmRSS != pmce.ProcStatus.VmRSS {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_RSS_METRIC_NAME,
-				commonLabels,
-				procStatus.VmRSS,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_rss:
+			if fullMetrics || procStatus.VmRSS != prevProcStatus.VmRSS {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_RSS_METRIC_NAME,
+					commonLabels,
+					procStatus.VmRSS,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_rss_anon:
-		if fullMetrics || procStatus.RssAnon != pmce.ProcStatus.RssAnon {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_RSS_ANON_METRIC_NAME,
-				commonLabels,
-				procStatus.RssAnon,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_rss_anon:
+			if fullMetrics || procStatus.RssAnon != prevProcStatus.RssAnon {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_RSS_ANON_METRIC_NAME,
+					commonLabels,
+					procStatus.RssAnon,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_rss_file:
-		if fullMetrics || procStatus.RssFile != pmce.ProcStatus.RssFile {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_RSS_FILE_METRIC_NAME,
-				commonLabels,
-				procStatus.RssFile,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_rss_file:
+			if fullMetrics || procStatus.RssFile != prevProcStatus.RssFile {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_RSS_FILE_METRIC_NAME,
+					commonLabels,
+					procStatus.RssFile,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_rss_shmem:
-		if fullMetrics || procStatus.RssShmem != pmce.ProcStatus.RssShmem {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_RSS_SHMEM_METRIC_NAME,
-				commonLabels,
-				procStatus.RssShmem,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_rss_shmem:
+			if fullMetrics || procStatus.RssShmem != prevProcStatus.RssShmem {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_RSS_SHMEM_METRIC_NAME,
+					commonLabels,
+					procStatus.RssShmem,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_data:
-		if fullMetrics || procStatus.VmData != pmce.ProcStatus.VmData {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_DATA_METRIC_NAME,
-				commonLabels,
-				procStatus.VmData,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_data:
+			if fullMetrics || procStatus.VmData != prevProcStatus.VmData {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_DATA_METRIC_NAME,
+					commonLabels,
+					procStatus.VmData,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_stk:
-		if fullMetrics || procStatus.VmStk != pmce.ProcStatus.VmStk {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_STK_METRIC_NAME,
-				commonLabels,
-				procStatus.VmStk,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_stk:
+			if fullMetrics || procStatus.VmStk != prevProcStatus.VmStk {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_STK_METRIC_NAME,
+					commonLabels,
+					procStatus.VmStk,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_exe:
-		if fullMetrics || procStatus.VmExe != pmce.ProcStatus.VmExe {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_EXE_METRIC_NAME,
-				commonLabels,
-				procStatus.VmExe,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_exe:
+			if fullMetrics || procStatus.VmExe != prevProcStatus.VmExe {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_EXE_METRIC_NAME,
+					commonLabels,
+					procStatus.VmExe,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_lib:
-		if fullMetrics || procStatus.VmLib != pmce.ProcStatus.VmLib {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_LIB_METRIC_NAME,
-				commonLabels,
-				procStatus.VmLib,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_lib:
+			if fullMetrics || procStatus.VmLib != prevProcStatus.VmLib {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_LIB_METRIC_NAME,
+					commonLabels,
+					procStatus.VmLib,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_pte:
-		if fullMetrics || procStatus.VmPTE != pmce.ProcStatus.VmPTE {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_PTE_METRIC_NAME,
-				commonLabels,
-				procStatus.VmPTE,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_pte:
+			if fullMetrics || procStatus.VmPTE != prevProcStatus.VmPTE {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_PTE_METRIC_NAME,
+					commonLabels,
+					procStatus.VmPTE,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_pmd:
-		if fullMetrics || procStatus.VmPMD != pmce.ProcStatus.VmPMD {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_PMD_METRIC_NAME,
-				commonLabels,
-				procStatus.VmPMD,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_pmd:
+			if fullMetrics || procStatus.VmPMD != prevProcStatus.VmPMD {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_PMD_METRIC_NAME,
+					commonLabels,
+					procStatus.VmPMD,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_vm_swap:
-		if fullMetrics || procStatus.VmSwap != pmce.ProcStatus.VmSwap {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_VM_SWAP_METRIC_NAME,
-				commonLabels,
-				procStatus.VmSwap,
-				metricTs,
-			)
-			generatedCount += 1
-		}
+			// proc_pid_status_vm_swap:
+			if fullMetrics || procStatus.VmSwap != prevProcStatus.VmSwap {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_VM_SWAP_METRIC_NAME,
+					commonLabels,
+					procStatus.VmSwap,
+					metricTs,
+				)
+				generatedCount += 1
+			}
 
-		// proc_pid_status_hugetbl_pages:
-		if fullMetrics || procStatus.HugetlbPages != pmce.ProcStatus.HugetlbPages {
-			fmt.Fprintf(
-				buf,
-				"%s{%s} %d %s\n",
-				PROC_PID_STATUS_HUGETBL_PAGES_METRIC_NAME,
-				commonLabels,
-				procStatus.HugetlbPages,
-				metricTs,
-			)
-			generatedCount += 1
+			// proc_pid_status_hugetbl_pages:
+			if fullMetrics || procStatus.HugetlbPages != prevProcStatus.HugetlbPages {
+				fmt.Fprintf(
+					buf,
+					"%s{%s} %d %s\n",
+					PROC_PID_STATUS_HUGETBL_PAGES_METRIC_NAME,
+					commonLabels,
+					procStatus.HugetlbPages,
+					metricTs,
+				)
+				generatedCount += 1
+			}
+
 		}
 
 		// proc_pid_status_voluntary_ctxt_switches:
-		if fullMetrics || procStatus.VoluntaryCtxtSwitches != pmce.ProcStatus.VoluntaryCtxtSwitches {
+		if fullMetrics || procStatus.VoluntaryCtxtSwitches != prevProcStatus.VoluntaryCtxtSwitches {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1000,7 +1092,7 @@ func GeneratePidMetrics(
 		}
 
 		// proc_pid_status_nonvoluntary_ctxt_switches:
-		if fullMetrics || procStatus.NonVoluntaryCtxtSwitches != pmce.ProcStatus.NonVoluntaryCtxtSwitches {
+		if fullMetrics || procStatus.NonVoluntaryCtxtSwitches != prevProcStatus.NonVoluntaryCtxtSwitches {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1012,12 +1104,8 @@ func GeneratePidMetrics(
 			generatedCount += 1
 		}
 
-		pmce.ProcStatus = procStatus
-	}
-
-	if procIo != nil {
 		// proc_pid_io_rcar:
-		if fullMetrics || procIo.RChar != pmce.ProcIo.RChar {
+		if fullMetrics || procIo.RChar != prevProcIo.RChar {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1030,7 +1118,7 @@ func GeneratePidMetrics(
 		}
 
 		// proc_pid_io_wcar:
-		if fullMetrics || procIo.WChar != pmce.ProcIo.WChar {
+		if fullMetrics || procIo.WChar != prevProcIo.WChar {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1043,7 +1131,7 @@ func GeneratePidMetrics(
 		}
 
 		// proc_pid_io_syscr:
-		if fullMetrics || procIo.SyscR != pmce.ProcIo.SyscR {
+		if fullMetrics || procIo.SyscR != prevProcIo.SyscR {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1056,7 +1144,7 @@ func GeneratePidMetrics(
 		}
 
 		// proc_pid_io_syscw:
-		if fullMetrics || procIo.SyscW != pmce.ProcIo.SyscW {
+		if fullMetrics || procIo.SyscW != prevProcIo.SyscW {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1069,7 +1157,7 @@ func GeneratePidMetrics(
 		}
 
 		// proc_pid_io_readbytes:
-		if fullMetrics || procIo.ReadBytes != pmce.ProcIo.ReadBytes {
+		if fullMetrics || procIo.ReadBytes != prevProcIo.ReadBytes {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1082,7 +1170,7 @@ func GeneratePidMetrics(
 		}
 
 		// proc_pid_io_writebytes:
-		if fullMetrics || procIo.WriteBytes != pmce.ProcIo.WriteBytes {
+		if fullMetrics || procIo.WriteBytes != prevProcIo.WriteBytes {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1095,7 +1183,7 @@ func GeneratePidMetrics(
 		}
 
 		// proc_pid_io_cancelled_writebytes:
-		if fullMetrics || procIo.CancelledWriteBytes != pmce.ProcIo.CancelledWriteBytes {
+		if fullMetrics || procIo.CancelledWriteBytes != prevProcIo.CancelledWriteBytes {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %d %s\n",
@@ -1106,15 +1194,13 @@ func GeneratePidMetrics(
 			)
 			generatedCount += 1
 		}
-
-		pmce.ProcIo = procIo
 	}
 
 	// Update the cache entry:
-	pmce.PassNum = pidMetricsCtx.passNum
 	pmce.Timestamp = timestamp
 
-	return nil
+	err = nil
+	return err
 }
 
 // Clear pseudo-categorical metrics for out-of-scope PID:

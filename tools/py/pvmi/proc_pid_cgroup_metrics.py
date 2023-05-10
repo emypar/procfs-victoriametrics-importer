@@ -15,7 +15,7 @@ proc_pid_cgroup_categorical_metric_names = [PROC_PID_CGROUP_METRIC_NAME]
 def generate_proc_pid_cgroup_metrics(
     proc_pid_croups: procfs.ProcPidCgroups,
     common_labels: str = "",
-    ts: Optional[int] = None,
+    ts: Optional[float] = None,
 ) -> List[Metric]:
     if ts is None:
         ts = proc_pid_croups._ts
