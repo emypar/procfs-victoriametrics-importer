@@ -205,7 +205,6 @@ func runPidMetricsTestCase(
 	// Generate new metrics:
 	pidMetricsCtx := &PidMetricsContext{
 		fs:                fs,
-		procfsRoot:        pmtc.ProcfsRoot,
 		pmc:               pmc,
 		psc:               psc,
 		passNum:           pmtc.WantPmce.PassNum,
@@ -319,7 +318,6 @@ func runAllPidMetricsTestCases(
 	}
 	// All test cases have the same procfs root, full metrics factor and active
 	// threshold, so we can use the 1st one to retrieve them:
-	procfsRoot := pmtcList[0].ProcfsRoot
 	fs, err := procfs.NewFS(pmtcList[0].ProcfsRoot)
 	if err != nil {
 		t.Error(err)
@@ -358,7 +356,6 @@ func runAllPidMetricsTestCases(
 	mgf := func(wChan chan *bytes.Buffer) {
 		mGenCtx := MetricsGenContext(&PidMetricsContext{
 			fs:                fs,
-			procfsRoot:        procfsRoot,
 			pmc:               pmc,
 			psc:               psc,
 			passNum:           passNum,

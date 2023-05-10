@@ -28,7 +28,7 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
+	"path"
 	"strconv"
 	"time"
 
@@ -76,8 +76,6 @@ type PidMetricsStats struct {
 type PidMetricsContext struct {
 	// Interval, needed to qualify as a MetricsGenContext
 	interval time.Duration
-	// Procfs dir root, needed to read raw data:
-	procfsRoot string
 	// procfs filesystem for procfs parsers:
 	fs procfs.FS
 	// The part#, if the PID,TID space is partitioned among goroutines:
@@ -166,7 +164,6 @@ func NewPidMetricsContext(
 	}
 	pidMetricsCtx := &PidMetricsContext{
 		interval:          interval,
-		procfsRoot:        procfsRoot,
 		fs:                fs,
 		pidListPart:       pidListPart,
 		pmc:               PidMetricsCache{},
@@ -320,7 +317,6 @@ func GeneratePidMetrics(
 		procIo, prevProcIo         *procfs.ProcIO
 		savedCrtProcIoIndex        int
 		err                        error
-		procDir                    string
 		generatedCount             uint64
 		deltaUTime, deltaSTime     uint
 	)
@@ -400,14 +396,14 @@ func GeneratePidMetrics(
 
 	if isForPid {
 		proc, err = pidMetricsCtx.fs.Proc(pid)
-		procDir = filepath.Join(pidMetricsCtx.procfsRoot, strconv.Itoa(pid))
 	} else {
 		proc, err = pidMetricsCtx.fs.Thread(pid, tid)
-		procDir = filepath.Join(pidMetricsCtx.procfsRoot, strconv.Itoa(pid), "task", strconv.Itoa(tid))
 	}
 	if err != nil {
 		return err
 	}
+
+	procDir := proc.Dir()
 
 	if !exists {
 		pmce = &PidMetricsCacheEntry{
@@ -524,11 +520,11 @@ func GeneratePidMetrics(
 			return true, nil
 		}
 
-		cgroupChanged, err = readRawFile(filepath.Join(procDir, "cgroup"), &pmce.RawCgroup)
+		cgroupChanged, err = readRawFile(path.Join(procDir, "cgroup"), &pmce.RawCgroup)
 		if err != nil {
 			return err
 		}
-		cmdlineChanged, err = readRawFile(filepath.Join(procDir, "cmdline"), &pmce.RawCmdline)
+		cmdlineChanged, err = readRawFile(path.Join(procDir, "cmdline"), &pmce.RawCmdline)
 		if err != nil {
 			return err
 		}
