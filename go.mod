@@ -8,8 +8,10 @@ require (
 	github.com/prometheus/procfs v0.9.0
 	github.com/sirupsen/logrus v1.9.0
 	github.com/tklauser/go-sysconf v0.3.11
-	golang.org/x/sys v0.5.0
+	golang.org/x/sys v0.7.0
 )
+
+replace github.com/prometheus/procfs => ../procfs
 
 require (
 	github.com/gookit/color v1.5.2 // indirect
