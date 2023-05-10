@@ -43,7 +43,20 @@ const (
 	PROC_PID_METRIC_T_STARTTIME_LABEL_NAME = "t_starttime"
 
 	// The max length of the buffer used to read files like cmdline and cgroup:
-	PROC_PID_FILE_BUFFER_MAX_LENGTH = 0x1000
+	PROC_PID_FILE_BUFFER_MAX_LENGTH = 0x10000
+
+	// Stats metrics:
+	PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME          = "proc_pid_metrics_stats_pid_count"
+	PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME          = "proc_pid_metrics_stats_tid_count"
+	PROC_PID_METRICS_STATS_ACTIVE_COUNT_METRICS_NAME       = "proc_pid_metrics_stats_active_count"
+	PROC_PID_METRICS_STATS_FULL_METRICS_COUNT_METRICS_NAME = "proc_pid_metrics_stats_full_metrics_count"
+	PROC_PID_METRICS_STATS_CREATED_COUNT_METRICS_NAME      = "proc_pid_metrics_stats_created_count"
+	PROC_PID_METRICS_STATS_DELETED_COUNT_METRICS_NAME      = "proc_pid_metrics_stats_deleted_count"
+	PROC_PID_METRICS_STATS_ERROR_COUNT_METRICS_NAME        = "proc_pid_metrics_stats_error_count"
+	PROC_PID_METRICS_STATS_GENERATED_COUNT_METRICS_NAME    = "proc_pid_metrics_stats_generated_count"
+	PROC_PID_METRICS_STATS_CACHE_COUNT_METRICS_NAME        = "proc_pid_metrics_stats_cache_count"
+	PROC_PID_METRICS_STATS_BYTES_COUNT_METRICS_NAME        = "proc_pid_metrics_stats_bytes_count"
+	PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME        = "pid_list_part"
 )
 
 var PidMetricsLog = Log.WithField(
@@ -70,6 +83,7 @@ type PidMetricsStats struct {
 	ErrorCount       uint64
 	GeneratedCount   uint64
 	PmcCount         uint64
+	BytesCount       uint64
 }
 
 // The context for pid metrics generation:
@@ -109,13 +123,14 @@ type PidMetricsContext struct {
 	// is read, compare against cached (previous) and discard because no change.
 	// That makes the buffer reusable across processes/threads.
 	fileBuf []byte
-	// The following are useful for testing, in lieu of mocks:
-	hostname  string
-	job       string
-	clktckSec float64
-	timeNow   TimeNowFn
-	getPids   func(int) []PidTidPair
-	bufPool   *BufferPool
+	// The following are useful for testing (mocks, special behavior):
+	enableStatsMetrics bool
+	hostname           string
+	job                string
+	clktckSec          float64
+	timeNow            TimeNowFn
+	getPids            func(int) []PidTidPair
+	bufPool            *BufferPool
 }
 
 func (pidMetricsCtx *PidMetricsContext) GetInterval() time.Duration {
@@ -129,6 +144,7 @@ func NewPidMetricsContext(
 	fullMetricsFactor int,
 	activeThreshold uint,
 	// needed for testing:
+	enableStatsMetrics bool,
 	hostname string,
 	job string,
 	clktckSec float64,
@@ -163,22 +179,23 @@ func NewPidMetricsContext(
 		return nil, err
 	}
 	pidMetricsCtx := &PidMetricsContext{
-		interval:          interval,
-		fs:                fs,
-		pidListPart:       pidListPart,
-		pmc:               PidMetricsCache{},
-		psc:               PidStarttimeCache{},
-		fullMetricsFactor: fullMetricsFactor,
-		activeThreshold:   activeThreshold,
-		passNum:           0,
-		wChan:             wChan,
-		fileBuf:           make([]byte, PROC_PID_FILE_BUFFER_MAX_LENGTH),
-		hostname:          hostname,
-		job:               job,
-		clktckSec:         clktckSec,
-		timeNow:           timeNow,
-		getPids:           getPids,
-		bufPool:           bufPool,
+		interval:           interval,
+		fs:                 fs,
+		pidListPart:        pidListPart,
+		pmc:                PidMetricsCache{},
+		psc:                PidStarttimeCache{},
+		fullMetricsFactor:  fullMetricsFactor,
+		activeThreshold:    activeThreshold,
+		passNum:            0,
+		wChan:              wChan,
+		fileBuf:            make([]byte, PROC_PID_FILE_BUFFER_MAX_LENGTH),
+		enableStatsMetrics: enableStatsMetrics,
+		hostname:           hostname,
+		job:                job,
+		clktckSec:          clktckSec,
+		timeNow:            timeNow,
+		getPids:            getPids,
+		bufPool:            bufPool,
 	}
 	return pidMetricsCtx, nil
 }
@@ -1256,12 +1273,14 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 	pidMetricsCtx.ClearPidStarttimeCache()
 	pidMetricsCtx.ClearStats()
 	buf := bufPool.GetBuffer()
+	bytesCount := 0
 	for _, pidTid := range pidList {
 		err := GeneratePidMetrics(pidTid, pidMetricsCtx, buf)
 		if err != nil {
 			PidMetricsLog.Warnf("GeneratePidMetrics(%v): %s", pidTid, err)
 		}
 		if buf.Len() >= BUF_MAX_SIZE {
+			bytesCount += buf.Len()
 			if wChan != nil {
 				wChan <- buf
 			} else {
@@ -1281,6 +1300,7 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 			delete(pmc, pidTid)
 			dCnt += 1
 			if buf.Len() >= BUF_MAX_SIZE {
+				bytesCount += buf.Len()
 				if wChan != nil {
 					wChan <- buf
 				} else {
@@ -1292,12 +1312,54 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 			pmcCnt += 1
 		}
 	}
-	pidMetricsCtx.pmStats.DeletedCount += dCnt
-	pidMetricsCtx.pmStats.PmcCount = pmcCnt
 	// Flush the last buffer:
+	bytesCount += buf.Len()
 	if buf.Len() > 0 && wChan != nil {
 		wChan <- buf
 	} else {
 		bufPool.ReturnBuffer(buf)
+	}
+
+	// Update stats:
+	pidMetricsCtx.pmStats.DeletedCount += dCnt
+	pidMetricsCtx.pmStats.PmcCount = pmcCnt
+	pidMetricsCtx.pmStats.BytesCount = uint64(bytesCount)
+
+	// Publish stats:
+	if pidMetricsCtx.enableStatsMetrics && wChan != nil {
+		buf = bufPool.GetBuffer()
+		pmStats := pidMetricsCtx.pmStats
+		statsLabels := fmt.Sprintf(
+			`%s="%s",%s="%s",%s="%d"`,
+			HOSTNAME_LABEL_NAME, pidMetricsCtx.hostname,
+			JOB_LABEL_NAME, pidMetricsCtx.job,
+			PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME, pidMetricsCtx.pidListPart,
+		)
+		fmt.Fprintf(
+			buf,
+			`
+%s{%s} %d %s
+%s{%s} %d %s
+%s{%s} %d %s
+%s{%s} %d %s
+%s{%s} %d %s
+%s{%s} %d %s
+%s{%s} %d %s
+%s{%s} %d %s
+%s{%s} %d %s
+%s{%s} %d %s
+`,
+			PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME, statsLabels, pmStats.PidCount, metricTs,
+			PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME, statsLabels, pmStats.TidCount, metricTs,
+			PROC_PID_METRICS_STATS_ACTIVE_COUNT_METRICS_NAME, statsLabels, pmStats.ActiveCount, metricTs,
+			PROC_PID_METRICS_STATS_FULL_METRICS_COUNT_METRICS_NAME, statsLabels, pmStats.FullMetricsCount, metricTs,
+			PROC_PID_METRICS_STATS_CREATED_COUNT_METRICS_NAME, statsLabels, pmStats.CreatedCount, metricTs,
+			PROC_PID_METRICS_STATS_DELETED_COUNT_METRICS_NAME, statsLabels, pmStats.DeletedCount, metricTs,
+			PROC_PID_METRICS_STATS_ERROR_COUNT_METRICS_NAME, statsLabels, pmStats.ErrorCount, metricTs,
+			PROC_PID_METRICS_STATS_GENERATED_COUNT_METRICS_NAME, statsLabels, pmStats.GeneratedCount, metricTs,
+			PROC_PID_METRICS_STATS_CACHE_COUNT_METRICS_NAME, statsLabels, pmStats.PmcCount, metricTs,
+			PROC_PID_METRICS_STATS_BYTES_COUNT_METRICS_NAME, statsLabels, pmStats.BytesCount, metricTs,
+		)
+		wChan <- buf
 	}
 }

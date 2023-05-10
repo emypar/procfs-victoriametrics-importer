@@ -161,6 +161,7 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 			fullMetricsFactor,
 			activeThreshold,
 			// needed for testing:
+			true,
 			GlobalMetricsHostname,
 			GlobalMetricsJob,
 			ClktckSec,
