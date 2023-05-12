@@ -21,10 +21,14 @@ import (
 type ProcStatMetricsTestCase struct {
 	Name              string
 	ProcfsRoot        string
-	PrevStat          *procfs.Stat
-	PrevTimestamp     int64
-	WantStat          *procfs.Stat
-	Timestamp         int64
+	PrevStat          [2]*procfs.Stat2
+	PrevCrtIndex      int
+	PrevPCpu          map[int]*PCpuStat
+	PrevTimestamp     *time.Time
+	WantStat          [2]*procfs.Stat2
+	WantCrtIndex      int
+	WantPCpu          map[int]*PCpuStat
+	Timestamp         time.Time
 	WantMetrics       []string
 	FullMetricsFactor int64
 	RefreshCycleNum   int64
@@ -37,7 +41,7 @@ const (
 
 func procStatTest(t *testing.T, tc *ProcStatMetricsTestCase) {
 	timeNow := func() time.Time {
-		return time.UnixMilli(tc.Timestamp)
+		return tc.Timestamp
 	}
 
 	bufPool := NewBufferPool(256)
@@ -55,8 +59,27 @@ func procStatTest(t *testing.T, tc *ProcStatMetricsTestCase) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	procStatMetricsCtx.prevStat = tc.PrevStat
-	procStatMetricsCtx.prevTs = time.UnixMilli(tc.PrevTimestamp)
+	for i, stat := range tc.PrevStat {
+		if stat == nil {
+			procStatMetricsCtx.stat[i] = nil
+		} else {
+			procStatMetricsCtx.stat[i] = &procfs.Stat2{}
+			*(procStatMetricsCtx.stat[i]) = *stat
+		}
+	}
+	if tc.PrevPCpu == nil {
+		procStatMetricsCtx.prevPCpu = nil
+	} else {
+		procStatMetricsCtx.prevPCpu = make(map[int]*PCpuStat)
+		for cpu, pCpuStat := range tc.PrevPCpu {
+			procStatMetricsCtx.prevPCpu[cpu] = &PCpuStat{}
+			*(procStatMetricsCtx.prevPCpu[cpu]) = *pCpuStat
+		}
+	}
+	procStatMetricsCtx.crtIndex = tc.PrevCrtIndex
+	if tc.PrevTimestamp != nil {
+		procStatMetricsCtx.Timestamp = *tc.PrevTimestamp
+	}
 	procStatMetricsCtx.refreshCycleNum = tc.RefreshCycleNum
 	gotMetrics := testutils.DuplicateStrings(
 		testutils.CollectMetrics(
@@ -68,20 +91,30 @@ func procStatTest(t *testing.T, tc *ProcStatMetricsTestCase) {
 		),
 		true,
 	)
-	//fmt.Printf("ctx.prevStat=%#v\n", procStatMetricsCtx.prevStat)
 	// Check buffer pool:
 	wantBufPoolCount := int(0)
 	gotBufPoolCount := bufPool.CheckedOutCount()
 	if wantBufPoolCount != gotBufPoolCount {
 		t.Errorf("bufPool.CheckedOutCount(): want %d, got %d", wantBufPoolCount, gotBufPoolCount)
 	}
-	if diff := cmp.Diff(
+	var r testutils.DiffReporter
+	if tc.WantCrtIndex != procStatMetricsCtx.crtIndex {
+		t.Errorf("crtIndex mismatch: want %d, got %d", tc.WantCrtIndex, procStatMetricsCtx.crtIndex)
+	}
+	if !cmp.Equal(
 		tc.WantStat,
-		procStatMetricsCtx.prevStat,
-		cmpopts.IgnoreFields(*tc.WantStat, "IRQ", "SoftIRQ"),
+		procStatMetricsCtx.stat,
+		cmp.Reporter(&r),
+	) {
+		t.Errorf("stat mismatch (-want +got):\n%s", r.String())
+	}
+	if !cmp.Equal(
+		tc.WantPCpu,
+		procStatMetricsCtx.prevPCpu,
 		cmpopts.EquateApprox(0, 1e-6),
-	); diff != "" {
-		t.Errorf("procfs.Stat mismatch (-want +got):\n%s", diff)
+		cmp.Reporter(&r),
+	) {
+		t.Errorf("prevPCpu mismatch (-want +got):\n%s", r.String())
 	}
 	wantMetrics := testutils.DuplicateStrings(tc.WantMetrics, true)
 	if diff := cmp.Diff(wantMetrics, gotMetrics); diff != "" {

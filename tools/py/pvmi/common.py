@@ -5,6 +5,8 @@
 import dataclasses
 import os
 import sys
+import time
+from datetime import datetime, timezone
 from typing import Callable, Dict, List, Optional, Union
 
 py_tools_dir = os.path.dirname(
@@ -45,6 +47,12 @@ def ts_to_prometheus_ts(ts: float) -> int:
 
 def prometheus_ts_to_ts(prom_ts: int) -> float:
     return float(prom_ts) / 1000.0
+
+
+def ts_to_go_time(ts: Optional[float] = None) -> str:
+    return datetime.fromtimestamp(
+        ts if ts is not None else time.time, timezone.utc
+    ).isoformat()
 
 
 def sanitize_label_value(v: str) -> str:

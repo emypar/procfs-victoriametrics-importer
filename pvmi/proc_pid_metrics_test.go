@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"path"
 	"strconv"
-	"strings"
 	"testing"
 	"time"
 
@@ -93,32 +92,6 @@ func dumpPidMetricsTestCase(pmtc *PidMetricsTestCase) string {
 	dumper.ShowFlag = dump.Fnopos
 	dumper.Dump(pmtc)
 	return buf.String()
-}
-
-// DiffReporter is a simple custom reporter that only records differences
-// detected during comparison.
-type DiffReporter struct {
-	path  cmp.Path
-	diffs []string
-}
-
-func (r *DiffReporter) PushStep(ps cmp.PathStep) {
-	r.path = append(r.path, ps)
-}
-
-func (r *DiffReporter) Report(rs cmp.Result) {
-	if !rs.Equal() {
-		vx, vy := r.path.Last().Values()
-		r.diffs = append(r.diffs, fmt.Sprintf("%#v:\n\t-: %+v\n\t+: %+v\n", r.path, vx, vy))
-	}
-}
-
-func (r *DiffReporter) PopStep() {
-	r.path = r.path[:len(r.path)-1]
-}
-
-func (r *DiffReporter) String() string {
-	return strings.Join(r.diffs, "\n")
 }
 
 func clonePmce(pmce *PidMetricsCacheEntry) *PidMetricsCacheEntry {
@@ -230,7 +203,7 @@ func runPidMetricsTestCase(
 		return
 	}
 
-	var r DiffReporter
+	var r testutils.DiffReporter
 	if !cmp.Equal(
 		pmtc.WantPmce,
 		gotPmce,

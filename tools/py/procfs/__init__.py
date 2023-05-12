@@ -21,6 +21,7 @@ from .proc_io import ProcIO, load_proc_pid_io
 from .proc_stat import ProcStat, load_proc_pid_stat
 from .proc_status import ProcStatus, load_proc_pid_status
 from .stat import Stat, load_stat
+from .stat2 import Stat2, load_stat2
 
 ProcfsStructType = Union[
     NetDev,
@@ -31,4 +32,5 @@ ProcfsStructType = Union[
     ProcPidCgroups,
     ProcPidCmdline,
     Stat,
+    Stat2,
 ]
