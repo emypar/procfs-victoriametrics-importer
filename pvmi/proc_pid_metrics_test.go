@@ -59,30 +59,30 @@ type PidMetricsTestCaseGroup map[PidMetricsTestCaseGroupKey][]PidMetricsTestCase
 // call to time.Now(), before invoking GeneratePidMetrics and it should receive
 // min(test case timestamp).
 type PidMetricsTestTimeNowMock struct {
-	prometheusTs []int64
-	i            int
-	keepMin      bool
+	timestamp []time.Time
+	i         int
+	keepMin   bool
 }
 
 func (tm *PidMetricsTestTimeNowMock) timeNow() time.Time {
-	t := time.UnixMilli(tm.prometheusTs[tm.i])
+	t := (tm.timestamp[tm.i])
 	tm.i += 1
 	return t
 }
 
-func (tm *PidMetricsTestTimeNowMock) addTs(ts int64) {
-	if tm.prometheusTs == nil {
-		tm.prometheusTs = make([]int64, 0)
+func (tm *PidMetricsTestTimeNowMock) addTs(ts time.Time) {
+	if tm.timestamp == nil {
+		tm.timestamp = make([]time.Time, 0)
 		tm.i = 0
 	}
 	if tm.keepMin {
-		if len(tm.prometheusTs) == 0 {
-			tm.prometheusTs = append(tm.prometheusTs, ts)
-		} else if ts < tm.prometheusTs[0] {
-			tm.prometheusTs[0] = ts
+		if len(tm.timestamp) == 0 {
+			tm.timestamp = append(tm.timestamp, ts)
+		} else if ts.Before(tm.timestamp[0]) {
+			tm.timestamp[0] = ts
 		}
 	}
-	tm.prometheusTs = append(tm.prometheusTs, ts)
+	tm.timestamp = append(tm.timestamp, ts)
 }
 
 func dumpPidMetricsTestCase(pmtc *PidMetricsTestCase) string {

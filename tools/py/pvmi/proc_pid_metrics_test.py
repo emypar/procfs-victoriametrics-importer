@@ -11,7 +11,7 @@ import procfs
 from metrics_common_test import TestClktckSec, TestdataProcfsRoot, TestdataTestCasesDir
 from tools_common import StructBase, rel_path_to_file, save_to_json_file
 
-from .common import Metric, metrics_delta, ts_to_prometheus_ts
+from .common import Metric, go_time_to_ts, metrics_delta, ts_to_go_time
 from .pid_list import get_pid_tid_list
 from .proc_pid_metrics import (
     PidMetricsCacheEntry,
@@ -119,13 +119,14 @@ def make_no_change_pmtc(
     want_pmce.ProcIo[1 - want_pmce.CrtProcIoIndex] = deepcopy(
         want_pmce.ProcIo[want_pmce.CrtProcIoIndex]
     )
-    prev_prom_ts = want_pmce.Timestamp - ts_to_prometheus_ts(PID_SCAN_INTERVAL_SECONDS)
+    ts = go_time_to_ts(want_pmce.Timestamp)
+    prev_ts = ts - PID_SCAN_INTERVAL_SECONDS
     update_pmce(
         want_pmce,
-        prev_prom_ts=prev_prom_ts,
+        prev_ts=prev_ts,
     )
     prev_pmce = deepcopy(want_pmce)
-    prev_pmce.Timestamp -= ts_to_prometheus_ts(PID_SCAN_INTERVAL_SECONDS)
+    prev_pmce.Timestamp = ts_to_go_time(prev_ts)
     prev_pmce.PassNum -= 1
     if fullMetricsFactor is None:
         fullMetricsFactor = pmtc.FullMetricsFactor
@@ -142,15 +143,13 @@ def make_no_change_pmtc(
         prev_pmce.CrtProcStatusIndex = 1 - prev_pmce.CrtProcStatusIndex
         prev_pmce.CrtProcIoIndex = 1 - prev_pmce.CrtProcIoIndex
     if refreshCycleNum == 0:
-        want_metrics = generate_pmce_full_metrics(
-            want_pmce, prev_prom_ts=prev_pmce.Timestamp
-        )
+        want_metrics = generate_pmce_full_metrics(want_pmce, prev_ts=prev_ts)
     elif not has_prev_cpu_pct:
         prev_pmce.PrevSTimePct = -1.0
         prev_pmce.PrevUTimePct = -1.0
         want_metrics = metrics_delta(
             generate_pmce_full_metrics(prev_pmce),
-            generate_pmce_full_metrics(want_pmce, prev_prom_ts=prev_pmce.Timestamp),
+            generate_pmce_full_metrics(want_pmce, prev_ts=prev_ts),
         )
     else:
         want_metrics = []
@@ -223,20 +222,19 @@ def make_active_threshold_pmtc(
             ]
             alter_procfs_struct_field(prev_stat, stat_field_spec)
             sync_with_prev_stat(new_pmtc, stat_field)
-        prev_prom_ts = new_pmtc.PrevPmce.Timestamp
-        prev_prev_prom_ts = new_pmtc.PrevPmce.Timestamp - (
-            new_pmtc.WantPmce.Timestamp - new_pmtc.PrevPmce.Timestamp
-        )
-        update_pmce(new_pmtc.PrevPmce, prev_prom_ts=prev_prev_prom_ts)
-        update_pmce(new_pmtc.WantPmce, prev_prom_ts=prev_prom_ts)
+        ts = go_time_to_ts(new_pmtc.WantPmce.Timestamp)
+        prev_ts = go_time_to_ts(new_pmtc.PrevPmce.Timestamp)
+        prev_prev_ts = prev_ts - (ts - prev_ts)
+        update_pmce(new_pmtc.PrevPmce, prev_ts=prev_prev_ts)
+        update_pmce(new_pmtc.WantPmce, prev_ts=prev_ts)
         new_pmtc.WantMetrics = metrics_delta(
             generate_pmce_full_metrics(
                 new_pmtc.PrevPmce,
-                prev_prom_ts=prev_prev_prom_ts,
+                prev_ts=prev_prev_ts,
             ),
             generate_pmce_full_metrics(
                 new_pmtc.WantPmce,
-                prev_prom_ts=prev_prom_ts,
+                prev_ts=prev_ts,
             ),
         )
         pmtc_list.append(new_pmtc)
@@ -301,10 +299,9 @@ def make_delta_pmtc(
         activeThreshold=activeThreshold,
         has_prev_cpu_pct=True,
     )
-    prev_prom_ts = new_pmtc.PrevPmce.Timestamp
-    prev_prev_prom_ts = prev_prom_ts - (
-        new_pmtc.WantPmce.Timestamp - new_pmtc.PrevPmce.Timestamp
-    )
+    ts = go_time_to_ts(new_pmtc.WantPmce.Timestamp)
+    prev_ts = go_time_to_ts(new_pmtc.PrevPmce.Timestamp)
+    prev_prev_ts = prev_ts - (ts - prev_ts)
     if stat_field == "RawCgroup":
         update_pmce(new_pmtc.PrevPmce, rawCgroup=PREV_PROC_PID_CGROUP_DELTA)
     elif stat_field == "RawCmdline":
@@ -333,18 +330,16 @@ def make_delta_pmtc(
             sync_with_prev_stat(new_pmtc, stat_field)
             # This the only case where the new cache entry has to be updated
             # since %CPU is also cached:
-            update_pmce(new_pmtc.WantPmce, prev_prom_ts=prev_prom_ts)
+            update_pmce(new_pmtc.WantPmce, prev_ts=prev_ts)
             # Disable %CPU metrics:
-            prev_prev_prom_ts = None
+            prev_prev_ts = None
     if refreshCycleNum == 0:
         new_pmtc.WantMetrics = generate_pmce_full_metrics(
             new_pmtc.WantPmce, prev_pmce=new_pmtc.PrevPmce
         )
     else:
         new_pmtc.WantMetrics = metrics_delta(
-            generate_pmce_full_metrics(
-                new_pmtc.PrevPmce, prev_prom_ts=prev_prev_prom_ts
-            ),
+            generate_pmce_full_metrics(new_pmtc.PrevPmce, prev_ts=prev_prev_ts),
             generate_pmce_full_metrics(new_pmtc.WantPmce, prev_pmce=new_pmtc.PrevPmce),
         )
     return new_pmtc

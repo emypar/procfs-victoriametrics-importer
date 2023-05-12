@@ -55,6 +55,16 @@ def ts_to_go_time(ts: Optional[float] = None) -> str:
     ).isoformat()
 
 
+def go_time_to_ts(timestamp: str) -> float:
+    ts = datetime.fromisoformat(timestamp)
+    return ts.timestamp()
+
+
+def go_time_to_prometheus_ts(timestamp: str) -> int:
+    ts = datetime.fromisoformat(timestamp)
+    return ts_to_prometheus_ts(ts.timestamp())
+
+
 def sanitize_label_value(v: str) -> str:
     return v.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
 

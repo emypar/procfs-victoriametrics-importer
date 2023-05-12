@@ -249,9 +249,8 @@ type PidMetricsCacheEntry struct {
 	// stands for invalid (this information is available at the end of the 2nd
 	// scan).
 	PrevUTimePct, PrevSTimePct float64
-	// Stats acquisition time stamp (Prometheus style, milliseconds since the
-	// epoch):
-	Timestamp int64
+	// Stats acquisition time stamp:
+	Timestamp time.Time
 	// Cache common labels:
 	CommonLabels string
 	// Pseudo-categorical metrics; useful to cache them since most likely they
@@ -547,10 +546,8 @@ func GeneratePidMetrics(
 		}
 	}
 
-	// Prometheus timestamp: milliseconds since epoch:
-	timestamp := pidMetricsCtx.timeNow().UnixMilli()
-	// As string, for metrics generation:
-	metricTs := strconv.FormatInt(timestamp, 10)
+	timestamp := pidMetricsCtx.timeNow().UTC()
+	promTs := strconv.FormatInt(timestamp.UnixMilli(), 10)
 
 	if !exists {
 		if isForPid {
@@ -578,21 +575,21 @@ func GeneratePidMetrics(
 		}
 		err = updateProcPidCgroupMetric(
 			pmce,
-			metricTs,
+			promTs,
 			buf,
 			&generatedCount,
 		)
 		if err != nil {
 			return err
 		}
-		updateProcPidCmdlineMetric(pmce, metricTs, buf, &generatedCount)
-		updateProcPidStatStateMetric(pmce, metricTs, buf, &generatedCount)
-		updateProcPidStatInfoMetric(pmce, metricTs, buf, &generatedCount)
-		updateProcPidStatusInfoMetric(pmce, metricTs, buf, &generatedCount)
+		updateProcPidCmdlineMetric(pmce, promTs, buf, &generatedCount)
+		updateProcPidStatStateMetric(pmce, promTs, buf, &generatedCount)
+		updateProcPidStatInfoMetric(pmce, promTs, buf, &generatedCount)
+		updateProcPidStatusInfoMetric(pmce, promTs, buf, &generatedCount)
 	} else {
 		// Check for changes in pseudo-categorical metrics:
 		if prevProcStat.State != procStat.State {
-			updateProcPidStatStateMetric(pmce, metricTs, buf, &generatedCount)
+			updateProcPidStatStateMetric(pmce, promTs, buf, &generatedCount)
 			statStateChanged = true
 		}
 		if prevProcStat.Comm != procStat.Comm ||
@@ -606,7 +603,7 @@ func GeneratePidMetrics(
 			prevProcStat.Nice != procStat.Nice ||
 			prevProcStat.RTPriority != procStat.RTPriority ||
 			prevProcStat.Policy != procStat.Policy {
-			updateProcPidStatInfoMetric(pmce, metricTs, buf, &generatedCount)
+			updateProcPidStatInfoMetric(pmce, promTs, buf, &generatedCount)
 			statInfoChanged = true
 		}
 
@@ -615,7 +612,7 @@ func GeneratePidMetrics(
 				prevProcStatus.TGID != procStatus.TGID ||
 				prevProcStatus.UIDs != procStatus.UIDs ||
 				prevProcStatus.GIDs != procStatus.GIDs {
-				updateProcPidStatusInfoMetric(pmce, metricTs, buf, &generatedCount)
+				updateProcPidStatusInfoMetric(pmce, promTs, buf, &generatedCount)
 				statusInfoChanged = true
 			}
 		}
@@ -623,7 +620,7 @@ func GeneratePidMetrics(
 		if cgroupChanged {
 			err = updateProcPidCgroupMetric(
 				pmce,
-				metricTs,
+				promTs,
 				buf,
 				&generatedCount,
 			)
@@ -632,13 +629,13 @@ func GeneratePidMetrics(
 			}
 		}
 		if cmdlineChanged {
-			updateProcPidCmdlineMetric(pmce, metricTs, buf, &generatedCount)
+			updateProcPidCmdlineMetric(pmce, promTs, buf, &generatedCount)
 		}
 	}
 
 	// Generate pseudo-categorical metrics; they all share the same value
 	// timestamp suffix:
-	setSuffix := []byte(" 1 " + metricTs + "\n")
+	setSuffix := []byte(" 1 " + promTs + "\n")
 
 	if fullMetrics || cgroupChanged {
 		for metric, _ := range pmce.ProcPidCgroupMetrics {
@@ -683,7 +680,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_MINFLT_METRIC_NAME,
 			commonLabels,
 			procStat.MinFlt,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -696,7 +693,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_CMINFLT_METRIC_NAME,
 			commonLabels,
 			procStat.CMinFlt,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -709,7 +706,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_MAJFLT_METRIC_NAME,
 			commonLabels,
 			procStat.MajFlt,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -722,7 +719,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_CMAJFLT_METRIC_NAME,
 			commonLabels,
 			procStat.CMajFlt,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -735,7 +732,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_UTIME_SECONDS_METRIC_NAME,
 			commonLabels,
 			float64(procStat.UTime)*pidMetricsCtx.clktckSec,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -748,7 +745,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_STIME_SECONDS_METRIC_NAME,
 			commonLabels,
 			float64(procStat.STime)*pidMetricsCtx.clktckSec,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -761,7 +758,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_CUTIME_SECONDS_METRIC_NAME,
 			commonLabels,
 			float64(procStat.CUTime)*pidMetricsCtx.clktckSec,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -774,7 +771,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_CSTIME_SECONDS_METRIC_NAME,
 			commonLabels,
 			float64(procStat.CSTime)*pidMetricsCtx.clktckSec,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -787,7 +784,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_VSIZE_METRIC_NAME,
 			commonLabels,
 			procStat.VSize,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -800,7 +797,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_RSS_METRIC_NAME,
 			commonLabels,
 			procStat.RSS,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -813,7 +810,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_RSSLIM_METRIC_NAME,
 			commonLabels,
 			procStat.RSSLimit,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -826,7 +823,7 @@ func GeneratePidMetrics(
 			PROC_PID_STAT_CPU_METRIC_NAME,
 			commonLabels,
 			procStat.Processor,
-			metricTs,
+			promTs,
 		)
 		generatedCount += 1
 	}
@@ -834,12 +831,8 @@ func GeneratePidMetrics(
 	// proc_pid_stat_*time_pct:
 	if exists {
 		// % = delta(XTime) * clktckSec / delta(time) * 100
-		//   = delta(XTime) * (clktckSec / delta(time) * 100)
-		//   = delta(XTime) *  \_______ pCpuFactor ________/
-		// pCpuFactor = clktckSec / delta(time) * 100
-		//            = clktckSec / (delta(prometheus time) / 1000) * 100
-		//            = clktckSec / delta(prometheus time) * 100000
-		pCpuFactor := pidMetricsCtx.clktckSec / float64(timestamp-pmce.Timestamp) * 100000.
+		//                    ( <------ pCpuFactor ------> )
+		pCpuFactor := pidMetricsCtx.clktckSec / timestamp.Sub(pmce.Timestamp).Seconds() * 100.
 		UTimePct, STimePct := float64(deltaUTime)*pCpuFactor, float64(deltaSTime)*pCpuFactor
 		// Note: when comparing %, use the same precision as that used for display (2DP):
 		if fullMetrics ||
@@ -851,15 +844,15 @@ func GeneratePidMetrics(
 				PROC_PID_STAT_UTIME_PCT_METRIC_NAME,
 				commonLabels,
 				UTimePct,
-				metricTs,
+				promTs,
 				PROC_PID_STAT_STIME_PCT_METRIC_NAME,
 				commonLabels,
 				STimePct,
-				metricTs,
+				promTs,
 				PROC_PID_STAT_CPU_TIME_PCT_METRIC_NAME,
 				commonLabels,
 				UTimePct+STimePct,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 3
 			pmce.PrevUTimePct, pmce.PrevSTimePct = UTimePct, STimePct
@@ -876,7 +869,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_PEAK_METRIC_NAME,
 					commonLabels,
 					procStatus.VmPeak,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -889,7 +882,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_SIZE_METRIC_NAME,
 					commonLabels,
 					procStatus.VmSize,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -902,7 +895,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_LCK_METRIC_NAME,
 					commonLabels,
 					procStatus.VmLck,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -915,7 +908,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_PIN_METRIC_NAME,
 					commonLabels,
 					procStatus.VmPin,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -928,7 +921,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_HWM_METRIC_NAME,
 					commonLabels,
 					procStatus.VmHWM,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -941,7 +934,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_RSS_METRIC_NAME,
 					commonLabels,
 					procStatus.VmRSS,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -954,7 +947,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_RSS_ANON_METRIC_NAME,
 					commonLabels,
 					procStatus.RssAnon,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -967,7 +960,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_RSS_FILE_METRIC_NAME,
 					commonLabels,
 					procStatus.RssFile,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -980,7 +973,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_RSS_SHMEM_METRIC_NAME,
 					commonLabels,
 					procStatus.RssShmem,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -993,7 +986,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_DATA_METRIC_NAME,
 					commonLabels,
 					procStatus.VmData,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -1006,7 +999,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_STK_METRIC_NAME,
 					commonLabels,
 					procStatus.VmStk,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -1019,7 +1012,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_EXE_METRIC_NAME,
 					commonLabels,
 					procStatus.VmExe,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -1032,7 +1025,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_LIB_METRIC_NAME,
 					commonLabels,
 					procStatus.VmLib,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -1045,7 +1038,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_PTE_METRIC_NAME,
 					commonLabels,
 					procStatus.VmPTE,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -1058,7 +1051,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_PMD_METRIC_NAME,
 					commonLabels,
 					procStatus.VmPMD,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -1071,7 +1064,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_VM_SWAP_METRIC_NAME,
 					commonLabels,
 					procStatus.VmSwap,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -1084,7 +1077,7 @@ func GeneratePidMetrics(
 					PROC_PID_STATUS_HUGETBL_PAGES_METRIC_NAME,
 					commonLabels,
 					procStatus.HugetlbPages,
-					metricTs,
+					promTs,
 				)
 				generatedCount += 1
 			}
@@ -1099,7 +1092,7 @@ func GeneratePidMetrics(
 				PROC_PID_STATUS_VOLUNTARY_CTXT_SWITCHES_METRIC_NAME,
 				commonLabels,
 				procStatus.VoluntaryCtxtSwitches,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1112,7 +1105,7 @@ func GeneratePidMetrics(
 				PROC_PID_STATUS_NONVOLUNTARY_CTXT_SWITCHES_METRIC_NAME,
 				commonLabels,
 				procStatus.NonVoluntaryCtxtSwitches,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1125,7 +1118,7 @@ func GeneratePidMetrics(
 				PROC_PID_IO_RCAR_METRIC_NAME,
 				commonLabels,
 				procIo.RChar,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1138,7 +1131,7 @@ func GeneratePidMetrics(
 				PROC_PID_IO_WCAR_METRIC_NAME,
 				commonLabels,
 				procIo.WChar,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1151,7 +1144,7 @@ func GeneratePidMetrics(
 				PROC_PID_IO_SYSCR_METRIC_NAME,
 				commonLabels,
 				procIo.SyscR,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1164,7 +1157,7 @@ func GeneratePidMetrics(
 				PROC_PID_IO_SYSCW_METRIC_NAME,
 				commonLabels,
 				procIo.SyscW,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1177,7 +1170,7 @@ func GeneratePidMetrics(
 				PROC_PID_IO_READBYTES_METRIC_NAME,
 				commonLabels,
 				procIo.ReadBytes,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1190,7 +1183,7 @@ func GeneratePidMetrics(
 				PROC_PID_IO_WRITEBYTES_METRIC_NAME,
 				commonLabels,
 				procIo.WriteBytes,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1203,7 +1196,7 @@ func GeneratePidMetrics(
 				PROC_PID_IO_CANCELLED_WRITEBYTES_METRIC_NAME,
 				commonLabels,
 				procIo.CancelledWriteBytes,
-				metricTs,
+				promTs,
 			)
 			generatedCount += 1
 		}
@@ -1219,12 +1212,12 @@ func GeneratePidMetrics(
 // Clear pseudo-categorical metrics for out-of-scope PID:
 func clearProcPidMetrics(
 	pmce *PidMetricsCacheEntry,
-	metricTs string,
+	promTs string,
 	buf *bytes.Buffer,
 	generatedCount *uint64,
 ) error {
 	gCnt := uint64(0)
-	clearSuffix := []byte(" 0 " + metricTs + "\n")
+	clearSuffix := []byte(" 0 " + promTs + "\n")
 	for metric, _ := range pmce.ProcPidCgroupMetrics {
 		buf.WriteString(metric)
 		buf.Write(clearSuffix)
@@ -1291,12 +1284,12 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 	}
 
 	// Clear expired PIDs:
-	metricTs := strconv.FormatInt(timestamp, 10)
+	promTs := strconv.FormatInt(timestamp, 10)
 	dCnt, pmcCnt := uint64(0), uint64(0)
 	pmc := pidMetricsCtx.pmc
 	for pidTid, pmce := range pmc {
 		if pmce.PassNum != passNum {
-			clearProcPidMetrics(pmce, metricTs, buf, &pidMetricsCtx.pmStats.GeneratedCount)
+			clearProcPidMetrics(pmce, promTs, buf, &pidMetricsCtx.pmStats.GeneratedCount)
 			delete(pmc, pidTid)
 			dCnt += 1
 			if buf.Len() >= BUF_MAX_SIZE {
@@ -1349,16 +1342,16 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 %s{%s} %d %s
 %s{%s} %d %s
 `,
-			PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME, statsLabels, pmStats.PidCount, metricTs,
-			PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME, statsLabels, pmStats.TidCount, metricTs,
-			PROC_PID_METRICS_STATS_ACTIVE_COUNT_METRICS_NAME, statsLabels, pmStats.ActiveCount, metricTs,
-			PROC_PID_METRICS_STATS_FULL_METRICS_COUNT_METRICS_NAME, statsLabels, pmStats.FullMetricsCount, metricTs,
-			PROC_PID_METRICS_STATS_CREATED_COUNT_METRICS_NAME, statsLabels, pmStats.CreatedCount, metricTs,
-			PROC_PID_METRICS_STATS_DELETED_COUNT_METRICS_NAME, statsLabels, pmStats.DeletedCount, metricTs,
-			PROC_PID_METRICS_STATS_ERROR_COUNT_METRICS_NAME, statsLabels, pmStats.ErrorCount, metricTs,
-			PROC_PID_METRICS_STATS_GENERATED_COUNT_METRICS_NAME, statsLabels, pmStats.GeneratedCount, metricTs,
-			PROC_PID_METRICS_STATS_CACHE_COUNT_METRICS_NAME, statsLabels, pmStats.PmcCount, metricTs,
-			PROC_PID_METRICS_STATS_BYTES_COUNT_METRICS_NAME, statsLabels, pmStats.BytesCount, metricTs,
+			PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME, statsLabels, pmStats.PidCount, promTs,
+			PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME, statsLabels, pmStats.TidCount, promTs,
+			PROC_PID_METRICS_STATS_ACTIVE_COUNT_METRICS_NAME, statsLabels, pmStats.ActiveCount, promTs,
+			PROC_PID_METRICS_STATS_FULL_METRICS_COUNT_METRICS_NAME, statsLabels, pmStats.FullMetricsCount, promTs,
+			PROC_PID_METRICS_STATS_CREATED_COUNT_METRICS_NAME, statsLabels, pmStats.CreatedCount, promTs,
+			PROC_PID_METRICS_STATS_DELETED_COUNT_METRICS_NAME, statsLabels, pmStats.DeletedCount, promTs,
+			PROC_PID_METRICS_STATS_ERROR_COUNT_METRICS_NAME, statsLabels, pmStats.ErrorCount, promTs,
+			PROC_PID_METRICS_STATS_GENERATED_COUNT_METRICS_NAME, statsLabels, pmStats.GeneratedCount, promTs,
+			PROC_PID_METRICS_STATS_CACHE_COUNT_METRICS_NAME, statsLabels, pmStats.PmcCount, promTs,
+			PROC_PID_METRICS_STATS_BYTES_COUNT_METRICS_NAME, statsLabels, pmStats.BytesCount, promTs,
 		)
 		wChan <- buf
 	}

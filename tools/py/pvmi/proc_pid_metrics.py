@@ -9,7 +9,7 @@ import procfs
 from metrics_common_test import TestClktckSec, TestdataProcfsRoot
 from tools_common import StructBase
 
-from .common import Metric, prometheus_ts_to_ts, ts_to_prometheus_ts
+from .common import Metric, go_time_to_ts, ts_to_go_time, ts_to_prometheus_ts
 from .proc_pid_cgroup_metrics import (
     generate_proc_pid_cgroup_metrics,
     proc_pid_cgroup_categorical_metric_names,
@@ -70,9 +70,8 @@ class PidMetricsCacheEntry(StructBase):
     # scan).
     PrevUTimePct: float = -1.0
     PrevSTimePct: float = -1.0
-    # Stats acquisition time stamp (Prometheus style, milliseconds since the
-    # epoch):
-    Timestamp: int = 0
+    # Stats acquisition time stamp:
+    Timestamp: str = dataclasses.field(default_factory=ts_to_go_time)
     # Cache common labels:
     CommonLabels: str = ""
     # Pseudo-categorical metrics; useful to cache them since most likely they
@@ -134,7 +133,7 @@ def load_pmce(
         CrtProcIoIndex=0,
         RawCgroup=proc_pid_cgroups.raw,
         RawCmdline=proc_pid_cmdline.raw,
-        Timestamp=ts_to_prometheus_ts(ts),
+        Timestamp=ts_to_go_time(ts),
         CommonLabels=common_labels,
     )
     update_pmce(pmce)
@@ -148,7 +147,7 @@ def update_pmce(
     proc_pid_io: Optional[procfs.ProcIO] = None,
     rawCgroup: Optional[bytes] = None,
     rawCmdline: Optional[bytes] = None,
-    prev_prom_ts: Optional[int] = None,
+    prev_ts: Optional[float] = None,
 ):
     if proc_pid_stat is not None:
         pmce.ProcStat[pmce.CrtProcStatIndex] = proc_pid_stat
@@ -197,13 +196,11 @@ def update_pmce(
     else:
         pmce.ProcPidCmdlineMetric = ""
     if (
-        prev_prom_ts is not None
+        prev_ts is not None
         and pmce.ProcStat[pmce.CrtProcStatIndex] is not None
         and pmce.ProcStat[1 - pmce.CrtProcStatIndex] is not None
     ):
-        delta_sec = prometheus_ts_to_ts(pmce.Timestamp) - prometheus_ts_to_ts(
-            prev_prom_ts
-        )
+        delta_sec = go_time_to_ts(pmce.Timestamp) - prev_ts
         pmce.PrevUTimePct = (
             (
                 pmce.ProcStat[pmce.CrtProcStatIndex].UTime
@@ -226,15 +223,15 @@ def update_pmce(
 
 def generate_pmce_full_metrics(
     pmce: PidMetricsCacheEntry,
-    prom_ts: Optional[int] = None,
+    ts: Optional[float] = None,
     prev_pmce: Optional[PidMetricsCacheEntry] = None,
-    prev_prom_ts: Optional[int] = None,
+    prev_ts: Optional[float] = None,
 ) -> List[Metric]:
-    if prom_ts is None:
-        prom_ts = pmce.Timestamp
-    if prev_prom_ts is None and prev_pmce is not None:
-        prev_prom_ts = prev_pmce.Timestamp
-    ts = prometheus_ts_to_ts(prom_ts)
+    if ts is None:
+        ts = go_time_to_ts(pmce.Timestamp)
+    if prev_ts is None and prev_pmce is not None:
+        prev_ts = go_time_to_ts(prev_pmce.Timestamp)
+    prom_ts = ts_to_prometheus_ts(ts)
     # All the metrics corresponding to the current state:
     metrics = []
     # Clear pseudo-categorical:
@@ -291,11 +288,9 @@ def generate_pmce_full_metrics(
             pmce.CommonLabels,
             ts=ts,
             prev_proc_pid_stat=pmce.ProcStat[1 - pmce.CrtProcStatIndex]
-            if prev_prom_ts is not None
+            if prev_ts is not None
             else None,
-            prev_ts=prometheus_ts_to_ts(prev_prom_ts)
-            if prev_prom_ts is not None
-            else None,
+            prev_ts=prev_ts,
         )
     )
     metrics.extend(
