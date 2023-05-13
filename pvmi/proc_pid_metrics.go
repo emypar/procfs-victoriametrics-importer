@@ -46,8 +46,15 @@ const (
 	PROC_PID_FILE_BUFFER_MAX_LENGTH = 0x10000
 
 	// Stats metrics:
-	PROC_PID_METRICS_UP_GROUP_NAME                         = "proc_pid_metrics"
-	PROC_PID_METRICS_UP_INTERVAL_LABEL_NAME                = "interval"
+	PROC_PID_METRICS_UP_GROUP_NAME                       = "proc_pid_metrics"
+	PROC_PID_METRICS_UP_INTERVAL_LABEL_NAME              = "interval"
+	PROC_PID_METRICS_UP_TID_ENABLED_LABEL_NAME           = "tid_enabled"
+	PROC_PID_METRICS_UP_NUM_GENERATORS_LABEL_NAME        = "num_generators"
+	PROC_PID_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
+	PROC_PID_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME   = "full_metrics_factor"
+	PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_PCT_LABEL_NAME  = "active_threshold_pct"
+	PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_LABEL_NAME      = "active_threshold"
+
 	PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME          = "proc_pid_metrics_stats_pid_count"
 	PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME          = "proc_pid_metrics_stats_tid_count"
 	PROC_PID_METRICS_STATS_ACTIVE_COUNT_METRICS_NAME       = "proc_pid_metrics_stats_active_count"
@@ -58,8 +65,22 @@ const (
 	PROC_PID_METRICS_STATS_GENERATED_COUNT_METRICS_NAME    = "proc_pid_metrics_stats_generated_count"
 	PROC_PID_METRICS_STATS_CACHE_COUNT_METRICS_NAME        = "proc_pid_metrics_stats_cache_count"
 	PROC_PID_METRICS_STATS_BYTES_COUNT_METRICS_NAME        = "proc_pid_metrics_stats_bytes_count"
-	PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME        = "pid_list_part"
+
+	PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME = "pid_list_part"
 )
+
+var statsMetricsFmt = ("" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"%s{%s} %d %s\n" +
+	"")
 
 var PidMetricsLog = Log.WithField(
 	LOGGER_COMPONENT_FIELD_NAME,
@@ -119,7 +140,8 @@ type PidMetricsContext struct {
 	// The channel receiving the generated metrics:
 	wChan chan *bytes.Buffer
 	// Stats struct:
-	pmStats *PidMetricsStats
+	pmStats     *PidMetricsStats
+	statsLabels string
 	// A buffer for reading files that are cached in raw format, like cmdline
 	// and cgroup. Such files do not change very often so the typical paradigm
 	// is read, compare against cached (previous) and discard because no change.
@@ -1311,6 +1333,9 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 			pmcCnt += 1
 		}
 	}
+	if dCnt > 0 {
+		buf.WriteByte('\n')
+	}
 	// Flush the last buffer:
 	bytesCount += buf.Len()
 	if buf.Len() > 0 && wChan != nil {
@@ -1328,26 +1353,19 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 	if pidMetricsCtx.enableStatsMetrics && wChan != nil {
 		buf = bufPool.GetBuffer()
 		pmStats := pidMetricsCtx.pmStats
-		statsLabels := fmt.Sprintf(
-			`%s="%s",%s="%s",%s="%d"`,
-			HOSTNAME_LABEL_NAME, pidMetricsCtx.hostname,
-			JOB_LABEL_NAME, pidMetricsCtx.job,
-			PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME, pidMetricsCtx.pidListPart,
-		)
+		statsLabels := pidMetricsCtx.statsLabels
+		if pidMetricsCtx.statsLabels == "" {
+			pidMetricsCtx.statsLabels = fmt.Sprintf(
+				`%s="%s",%s="%s",%s="%d"`,
+				HOSTNAME_LABEL_NAME, pidMetricsCtx.hostname,
+				JOB_LABEL_NAME, pidMetricsCtx.job,
+				PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME, pidMetricsCtx.pidListPart,
+			)
+			statsLabels = pidMetricsCtx.statsLabels
+		}
 		fmt.Fprintf(
 			buf,
-			`%s{%s} %d %s
-%s{%s} %d %s
-%s{%s} %d %s
-%s{%s} %d %s
-%s{%s} %d %s
-%s{%s} %d %s
-%s{%s} %d %s
-%s{%s} %d %s
-%s{%s} %d %s
-%s{%s} %d %s
-
-`,
+			statsMetricsFmt,
 			PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME, statsLabels, pmStats.PidCount, promTs,
 			PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME, statsLabels, pmStats.TidCount, promTs,
 			PROC_PID_METRICS_STATS_ACTIVE_COUNT_METRICS_NAME, statsLabels, pmStats.ActiveCount, promTs,
@@ -1359,6 +1377,7 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 			PROC_PID_METRICS_STATS_CACHE_COUNT_METRICS_NAME, statsLabels, pmStats.PmcCount, promTs,
 			PROC_PID_METRICS_STATS_BYTES_COUNT_METRICS_NAME, statsLabels, pmStats.BytesCount, promTs,
 		)
+		buf.WriteByte('\n')
 		wChan <- buf
 	}
 }

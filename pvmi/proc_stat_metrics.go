@@ -41,6 +41,11 @@ const (
 	DEFAULT_PROC_STAT_METRICS_FULL_METRICS_INTERVAL = 5   // seconds
 
 	CPU_TOTAL_ID = -1
+
+	PROC_STAT_METRICS_UP_GROUP_NAME                       = "proc_stat_metrics"
+	PROC_STAT_METRICS_UP_INTERVAL_LABEL_NAME              = "interval"
+	PROC_STAT_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
+	PROC_STAT_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME   = "full_metrics_factor"
 )
 
 var ProcStatMetricsLog = Log.WithField(
@@ -507,8 +512,24 @@ func StartProcStatMetricsFromArgs() error {
 	}
 	if procStatMetricsCtx == nil {
 		ProcStatMetricsLog.Warn("proc_stat metrics collection disabled")
+		metricsUp.Register(
+			PROC_STAT_METRICS_UP_GROUP_NAME,
+			0,
+		)
 		return nil
 	}
+
+	metricsUp.Register(
+		PROC_STAT_METRICS_UP_GROUP_NAME,
+		1,
+		fmt.Sprintf(`%s="%s"`, PROC_STAT_METRICS_UP_INTERVAL_LABEL_NAME, procStatMetricsCtx.interval),
+		fmt.Sprintf(
+			`%s="%s"`,
+			PROC_STAT_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME,
+			time.Duration(*ProcStatMetricsFullMetricsIntervalArg*float64(time.Second)),
+		),
+		fmt.Sprintf(`%s="%d"`, PROC_STAT_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME, procStatMetricsCtx.fullMetricsFactor),
+	)
 
 	GlobalProcStatMetricsCtx = procStatMetricsCtx
 	GlobalSchedulerContext.Add(GenerateProcStatMetrics, MetricsGenContext(procStatMetricsCtx))

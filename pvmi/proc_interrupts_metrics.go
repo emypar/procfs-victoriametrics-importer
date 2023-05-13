@@ -23,6 +23,12 @@ const (
 
 	DEFAULT_PROC_INTERRUPTS_METRICS_SCAN_INTERVAL         = 1  // seconds
 	DEFAULT_PROC_INTERRUPTS_METRICS_FULL_METRICS_INTERVAL = 15 // seconds
+
+	// Stats metrics:
+	PROC_INTERRUPTS_METRICS_UP_GROUP_NAME                       = "proc_interrupts_metrics"
+	PROC_INTERRUPTS_METRICS_UP_INTERVAL_LABEL_NAME              = "interval"
+	PROC_INTERRUPTS_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
+	PROC_INTERRUPTS_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME   = "full_metrics_factor"
 )
 
 var ProcInterruptsMetricsLog = Log.WithField(
@@ -302,8 +308,28 @@ func StartProcInterruptsMetricsFromArgs() error {
 	}
 	if procInterruptsMetricsCtx == nil {
 		ProcInterruptsMetricsLog.Warn("proc_interrupts metrics collection disabled")
+		metricsUp.Register(
+			PROC_INTERRUPTS_METRICS_UP_GROUP_NAME,
+			0,
+		)
 		return nil
 	}
+
+	metricsUp.Register(
+		PROC_INTERRUPTS_METRICS_UP_GROUP_NAME,
+		1,
+		fmt.Sprintf(`%s="%s"`, PROC_INTERRUPTS_METRICS_UP_INTERVAL_LABEL_NAME, procInterruptsMetricsCtx.interval),
+		fmt.Sprintf(
+			`%s="%s"`,
+			PROC_INTERRUPTS_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME,
+			time.Duration(*ProcInterruptsMetricsFullMetricsIntervalArg*float64(time.Second)),
+		),
+		fmt.Sprintf(
+			`%s="%d"`,
+			PROC_INTERRUPTS_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME,
+			procInterruptsMetricsCtx.fullMetricsFactor,
+		),
+	)
 
 	GlobalProcInterruptsMetricsCtx = procInterruptsMetricsCtx
 	GlobalSchedulerContext.Add(GenerateProcInterruptsMetrics, MetricsGenContext(procInterruptsMetricsCtx))

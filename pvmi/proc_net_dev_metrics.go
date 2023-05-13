@@ -31,6 +31,12 @@ const (
 
 	DEFAULT_PROC_NET_DEV_METRICS_SCAN_INTERVAL         = 1  // seconds
 	DEFAULT_PROC_NET_DEV_METRICS_FULL_METRICS_INTERVAL = 15 // seconds
+
+	// Stats metrics:
+	PROC_NET_DEV_METRICS_UP_GROUP_NAME                       = "proc_net_dev_metrics"
+	PROC_NET_DEV_METRICS_UP_INTERVAL_LABEL_NAME              = "interval"
+	PROC_NET_DEV_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
+	PROC_NET_DEV_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME   = "full_metrics_factor"
 )
 
 var ProcNetDevMetricsLog = Log.WithField(
@@ -340,9 +346,28 @@ func StartProcNetDevMetricsFromArgs() error {
 	}
 	if procNetDevMetricsCtx == nil {
 		ProcNetDevMetricsLog.Warn("proc_net_dev metrics collection disabled")
+		metricsUp.Register(
+			PROC_NET_DEV_METRICS_UP_GROUP_NAME,
+			0,
+		)
 		return nil
 	}
 
+	metricsUp.Register(
+		PROC_NET_DEV_METRICS_UP_GROUP_NAME,
+		1,
+		fmt.Sprintf(`%s="%s"`, PROC_NET_DEV_METRICS_UP_INTERVAL_LABEL_NAME, procNetDevMetricsCtx.interval),
+		fmt.Sprintf(
+			`%s="%s"`,
+			PROC_NET_DEV_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME,
+			time.Duration(*ProcNetDevMetricsFullMetricsIntervalArg*float64(time.Second)),
+		),
+		fmt.Sprintf(
+			`%s="%d"`,
+			PROC_NET_DEV_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME,
+			procNetDevMetricsCtx.fullMetricsFactor,
+		),
+	)
 	GlobalProcNetDevMetricsCtx = procNetDevMetricsCtx
 	GlobalSchedulerContext.Add(GenerateProcNetDevMetrics, MetricsGenContext(procNetDevMetricsCtx))
 	return nil

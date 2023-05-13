@@ -9,13 +9,12 @@ import (
 )
 
 const (
-	DEFAULT_PID_METRICS_NUM_GENERATORS          = -1        // i.e. use available CPU count.
-	MAX_NUM_PID_METRICS_GENERATORS              = 4         // ceiling when based on CPU count
-	DEFAULT_PID_METRICS_SCAN_INTERVAL           = 1.        // seconds
-	DEFAULT_PID_METRICS_FULL_METRICS_INTERVAL   = 15.       // seconds
-	DEFAULT_PID_METRICS_ACTIVE_THRESHOLD_PCT    = 1.        // %CPU
-	DEFAULT_PID_METRICS_PID_TID_SELECTION       = "pid+tid" // "pid"|"tid"|"pid+tid"
-	DEFAULT_PID_METRICS_PID_LIST_VALID_INTERVAL = -1.       // i.e. use 1/2 * scan interval
+	DEFAULT_PID_METRICS_NUM_GENERATORS          = -1  // i.e. use available CPU count.
+	MAX_NUM_PID_METRICS_GENERATORS              = 4   // ceiling when based on CPU count
+	DEFAULT_PID_METRICS_SCAN_INTERVAL           = 1.  // seconds
+	DEFAULT_PID_METRICS_FULL_METRICS_INTERVAL   = 15. // seconds
+	DEFAULT_PID_METRICS_ACTIVE_THRESHOLD_PCT    = 1.  // %CPU
+	DEFAULT_PID_METRICS_PID_LIST_VALID_INTERVAL = -1. // i.e. use 1/2 * scan interval
 
 )
 
@@ -57,12 +56,11 @@ var PidMetricsActiveThresholdPctArg = flag.Float64(
 	`),
 )
 
-var PidMetricsPidTidSelectionArg = flag.String(
-	"pid-metrics-pid-tid-selection",
-	DEFAULT_PID_METRICS_PID_TID_SELECTION,
+var PidMetricsDisableTidArg = flag.Bool(
+	"pid-metrics-disable-tid",
+	false,
 	FormatFlagUsage(`
-	Whether to collect metrics for processes (pid), threads (tid) or both
-	(pid+tid). 
+	Disable metrics collection for threads (tid). 
 	`),
 )
 
@@ -94,20 +92,9 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	}
 	interval := time.Duration(*PidMetricsScanIntervalArg * float64(time.Second))
 
-	pidListFlags := uint32(0)
-	pidTidSelection := *PidMetricsPidTidSelectionArg
-	switch pidTidSelection {
-	case "pid":
-		pidListFlags = PID_LIST_CACHE_PID_ENABLED_FLAG
-	case "tid":
-		pidListFlags = PID_LIST_CACHE_TID_ENABLED_FLAG
-	case "pid+tid":
-		pidListFlags = PID_LIST_CACHE_PID_ENABLED_FLAG | PID_LIST_CACHE_TID_ENABLED_FLAG
-	default:
-		return nil, fmt.Errorf(
-			"%s: invalid process/thread selection, not one of pid, tid or pid+tid",
-			pidTidSelection,
-		)
+	pidListFlags := PID_LIST_CACHE_PID_ENABLED_FLAG
+	if !*PidMetricsDisableTidArg {
+		pidListFlags |= PID_LIST_CACHE_TID_ENABLED_FLAG
 	}
 	pidListValidInterval := time.Duration(*PidMetricsPidListValidIntervalArg * float64(time.Second))
 	if pidListValidInterval < 0 {
@@ -141,7 +128,7 @@ func BuildPidMetricsCtxFromArgs() ([]*PidMetricsContext, error) {
 	}
 
 	PidMetricsLog.Infof("proc_pid metrics: interval=%s", interval)
-	PidMetricsLog.Infof("proc_pid metrics: pidTidSelection=%s", pidTidSelection)
+	PidMetricsLog.Infof("proc_pid metrics: disableTid=%v", *PidMetricsDisableTidArg)
 	PidMetricsLog.Infof("proc_pid metrics: pidListValidInterval=%s", pidListValidInterval)
 	PidMetricsLog.Infof("proc_pid metrics: procfsRoot=%s", GlobalProcfsRoot)
 	PidMetricsLog.Infof("proc_pid metrics: fullMetricsFactor=%d", fullMetricsFactor)
@@ -188,7 +175,7 @@ func StartPidMetricsFromArgs() error {
 	}
 	if pidMetricsContextList == nil {
 		PidMetricsLog.Warn("PID metrics collection disabled")
-		metricsUp.RegisterMetricUp(PROC_PID_METRICS_UP_GROUP_NAME, 0)
+		metricsUp.Register(PROC_PID_METRICS_UP_GROUP_NAME, 0)
 		return nil
 	}
 
@@ -199,11 +186,20 @@ func StartPidMetricsFromArgs() error {
 			pidMetricsCtx.interval,
 			pidMetricsCtx.pidListPart,
 		)
-		metricsUp.RegisterMetricUp(
+		metricsUp.Register(
 			PROC_PID_METRICS_UP_GROUP_NAME,
 			1,
 			fmt.Sprintf(`%s="%s"`, PROC_PID_METRICS_UP_INTERVAL_LABEL_NAME, pidMetricsCtx.interval),
 			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME, pidMetricsCtx.pidListPart),
+			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_UP_NUM_GENERATORS_LABEL_NAME, len(pidMetricsContextList)),
+			fmt.Sprintf(
+				`%s="%s"`,
+				PROC_PID_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME,
+				time.Duration(*PidMetricsFullMetricsIntervalArg*float64(time.Second)),
+			),
+			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME, pidMetricsCtx.fullMetricsFactor),
+			fmt.Sprintf(`%s="%.02f%%"`, PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_PCT_LABEL_NAME, *PidMetricsActiveThresholdPctArg),
+			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_LABEL_NAME, pidMetricsCtx.activeThreshold),
 		)
 		GlobalSchedulerContext.Add(GenerateAllPidMetrics, MetricsGenContext(pidMetricsCtx))
 	}
