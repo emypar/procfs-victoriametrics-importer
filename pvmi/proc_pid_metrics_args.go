@@ -188,6 +188,7 @@ func StartPidMetricsFromArgs() error {
 	}
 	if pidMetricsContextList == nil {
 		PidMetricsLog.Warn("PID metrics collection disabled")
+		metricsUp.RegisterMetricUp(PROC_PID_METRICS_UP_GROUP_NAME, 0)
 		return nil
 	}
 
@@ -197,6 +198,12 @@ func StartPidMetricsFromArgs() error {
 			"Start PID metrics generator: interval=%s, partition=%d",
 			pidMetricsCtx.interval,
 			pidMetricsCtx.pidListPart,
+		)
+		metricsUp.RegisterMetricUp(
+			PROC_PID_METRICS_UP_GROUP_NAME,
+			1,
+			fmt.Sprintf(`%s="%s"`, PROC_PID_METRICS_UP_INTERVAL_LABEL_NAME, pidMetricsCtx.interval),
+			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME, pidMetricsCtx.pidListPart),
 		)
 		GlobalSchedulerContext.Add(GenerateAllPidMetrics, MetricsGenContext(pidMetricsCtx))
 	}

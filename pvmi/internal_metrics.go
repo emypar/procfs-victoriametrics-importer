@@ -9,6 +9,8 @@ import (
 	"os"
 	"runtime"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/prometheus/procfs"
@@ -53,16 +55,6 @@ const (
 	INTERNAL_PROC_RSS_METRIC_NAME   = "pvmi_proc_rss_bytes"
 )
 
-var InternalMetricIntValFmt = fmt.Sprintf(
-	`%%s{%s="%%s",%s="%%s"} %%d %%s`+"\n",
-	HOSTNAME_LABEL_NAME, JOB_LABEL_NAME,
-)
-
-var InternalMetricFloatValFmt = fmt.Sprintf(
-	`%%s{%s="%%s",%s="%%s"} %%f %%s`+"\n",
-	HOSTNAME_LABEL_NAME, JOB_LABEL_NAME,
-)
-
 var InternalMetricsLog = Log.WithField(
 	LOGGER_COMPONENT_FIELD_NAME,
 	"InternalMetrics",
@@ -76,6 +68,31 @@ var InternalMetricsIntervalArg = flag.Float64(
 	`),
 )
 
+type MetricsUp struct {
+	metrics map[string]int
+	lck     *sync.Mutex
+}
+
+func (mu *MetricsUp) RegisterMetricUp(metricsGroup string, val int, extraLabels ...string) {
+	mu.lck.Lock()
+	metric := fmt.Sprintf(
+		`%s_up{%s="%s",%s="%s"`,
+		metricsGroup, HOSTNAME_LABEL_NAME, GlobalMetricsHostname, JOB_LABEL_NAME, GlobalMetricsJob,
+	)
+	if len(extraLabels) > 0 {
+		metric += "," + strings.Join(extraLabels, ",")
+	}
+	metric += "}"
+	mu.metrics[metric] = val
+	InternalMetricsLog.Infof("register: %s=%d", metric, val)
+	mu.lck.Unlock()
+}
+
+var metricsUp = MetricsUp{
+	metrics: make(map[string]int),
+	lck:     &sync.Mutex{},
+}
+
 type InternalMetricsContext struct {
 	// Interval, needed to qualify as a MetricsGenContext
 	interval time.Duration
@@ -87,14 +104,17 @@ type InternalMetricsContext struct {
 	wChan chan *bytes.Buffer
 
 	// Internal metrics have a simple format:
-	//  <name>{HOSTNAME_LABEL=HOSTNAME,JOB_LABEL=JOB} <val> <ts>
+	//  <name>{HOSTNAME_LABEL=HOSTNAME,JOB_LABEL=JOB} <val> <promTs>
 	// so for efficiency purposes pre-build the actual Printf formats for
 	// integer and float values:
 	intValueMetricFmt   string
 	floatValueMetricFmt string
 
+	// *_metrics_up
+
 	// For resource utilization like %CPU and memory:
 	proc          procfs.Proc
+	procStat      procfs.ProcStat
 	pid           int
 	pageSize      int
 	prevStatsTime time.Time
@@ -145,13 +165,13 @@ func BuildInternalMetricsCtxFromArgs() (*InternalMetricsContext, error) {
 	var procStat procfs.ProcStat
 	proc, err := fs.Proc(pid)
 	if err == nil {
-		procStat, err = proc.Stat()
+		_, err = proc.StatWithStruct(&internalMetricsCtx.procStat)
 	}
 	if err != nil {
 		InternalMetricsLog.Warnf("%%CPU/Mem unavailable: %s", err)
 		internalMetricsCtx.procStatUnavailable = true
 	} else {
-		internalMetricsCtx.prevStatsTime = time.Now()
+		internalMetricsCtx.prevStatsTime = time.Now().UTC()
 		internalMetricsCtx.proc = proc
 		internalMetricsCtx.prevCpuTicks = procStat.UTime + procStat.STime
 	}
@@ -192,8 +212,8 @@ func GenerateInternalResourceMetrics(
 	var rss int
 	var vSize uint
 	if !internalMetricsCtx.procStatUnavailable {
-		procStat, err := internalMetricsCtx.proc.Stat()
-		statsTime = time.Now()
+		procStat, err := internalMetricsCtx.proc.StatWithStruct(&internalMetricsCtx.procStat)
+		statsTime = time.Now().UTC()
 		if err != nil {
 			InternalMetricsLog.Warnf("%%CPU/Mem unavailable: %s", err)
 			internalMetricsCtx.procStatUnavailable = true
@@ -209,89 +229,87 @@ func GenerateInternalResourceMetrics(
 		statsTime = time.Now()
 	}
 
-	ts := strconv.FormatInt(statsTime.UnixMilli(), 10)
+	promTs := strconv.FormatInt(statsTime.UnixMilli(), 10)
 
 	intValueMetricFmt := internalMetricsCtx.intValueMetricFmt
 	floatValueMetricFmt := internalMetricsCtx.floatValueMetricFmt
 
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_UP_METRIC_NAME, 1, ts)
+		INTERNAL_UP_METRIC_NAME, 1, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GOROUTINE_COUNT_METRIC_NAME, numCpus, ts)
+		INTERNAL_GOROUTINE_COUNT_METRIC_NAME, numCpus, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_TOTAL_ALLOC_METRIC_NAME, memStats.TotalAlloc, ts)
+		INTERNAL_GO_MEM_STATS_TOTAL_ALLOC_METRIC_NAME, memStats.TotalAlloc, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_SYS_METRIC_NAME, memStats.Sys, ts)
+		INTERNAL_GO_MEM_STATS_SYS_METRIC_NAME, memStats.Sys, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_LOOKUPS_METRIC_NAME, memStats.Lookups, ts)
+		INTERNAL_GO_MEM_STATS_LOOKUPS_METRIC_NAME, memStats.Lookups, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_MALLOCS_METRIC_NAME, memStats.Mallocs, ts)
+		INTERNAL_GO_MEM_STATS_MALLOCS_METRIC_NAME, memStats.Mallocs, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_FREES_METRIC_NAME, memStats.Frees, ts)
+		INTERNAL_GO_MEM_STATS_FREES_METRIC_NAME, memStats.Frees, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_HEAP_ALLOC_METRIC_NAME, memStats.HeapAlloc, ts)
+		INTERNAL_GO_MEM_STATS_HEAP_ALLOC_METRIC_NAME, memStats.HeapAlloc, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_HEAP_SYS_METRIC_NAME, memStats.HeapSys, ts)
+		INTERNAL_GO_MEM_STATS_HEAP_SYS_METRIC_NAME, memStats.HeapSys, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_HEAP_IDLE_METRIC_NAME, memStats.HeapIdle, ts)
+		INTERNAL_GO_MEM_STATS_HEAP_IDLE_METRIC_NAME, memStats.HeapIdle, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_HEAP_IN_USE_METRIC_NAME, memStats.HeapInuse, ts)
+		INTERNAL_GO_MEM_STATS_HEAP_IN_USE_METRIC_NAME, memStats.HeapInuse, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_HEAP_RELEASED_METRIC_NAME, memStats.HeapReleased, ts)
+		INTERNAL_GO_MEM_STATS_HEAP_RELEASED_METRIC_NAME, memStats.HeapReleased, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_HEAP_OBJECTS_METRIC_NAME, memStats.HeapObjects, ts)
+		INTERNAL_GO_MEM_STATS_HEAP_OBJECTS_METRIC_NAME, memStats.HeapObjects, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_STACK_IN_USE_METRIC_NAME, memStats.StackInuse, ts)
+		INTERNAL_GO_MEM_STATS_STACK_IN_USE_METRIC_NAME, memStats.StackInuse, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_STACK_SYS_METRIC_NAME, memStats.StackSys, ts)
+		INTERNAL_GO_MEM_STATS_STACK_SYS_METRIC_NAME, memStats.StackSys, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_MSPAN_IN_USE_METRIC_NAME, memStats.MSpanInuse, ts)
+		INTERNAL_GO_MEM_STATS_MSPAN_IN_USE_METRIC_NAME, memStats.MSpanInuse, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_MSPAN_SYS_METRIC_NAME, memStats.MSpanSys, ts)
+		INTERNAL_GO_MEM_STATS_MSPAN_SYS_METRIC_NAME, memStats.MSpanSys, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_MCACHE_IN_USE_METRIC_NAME, memStats.MCacheInuse, ts)
+		INTERNAL_GO_MEM_STATS_MCACHE_IN_USE_METRIC_NAME, memStats.MCacheInuse, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_MCACHE_SYS_METRIC_NAME, memStats.MCacheSys, ts)
+		INTERNAL_GO_MEM_STATS_MCACHE_SYS_METRIC_NAME, memStats.MCacheSys, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_BUCK_HASH_SYS_METRIC_NAME, memStats.BuckHashSys, ts)
+		INTERNAL_GO_MEM_STATS_BUCK_HASH_SYS_METRIC_NAME, memStats.BuckHashSys, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_GC_SYS_METRIC_NAME, memStats.GCSys, ts)
+		INTERNAL_GO_MEM_STATS_GC_SYS_METRIC_NAME, memStats.GCSys, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_OTHER_SYS_METRIC_NAME, memStats.OtherSys, ts)
+		INTERNAL_GO_MEM_STATS_OTHER_SYS_METRIC_NAME, memStats.OtherSys, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_NEXT_GC_METRIC_NAME, memStats.NextGC, ts)
+		INTERNAL_GO_MEM_STATS_NEXT_GC_METRIC_NAME, memStats.NextGC, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_LAST_GC_METRIC_NAME, memStats.LastGC, ts)
+		INTERNAL_GO_MEM_STATS_LAST_GC_METRIC_NAME, memStats.LastGC, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_PAUSE_TOTAL_METRIC_NAME, memStats.PauseTotalNs, ts)
+		INTERNAL_GO_MEM_STATS_PAUSE_TOTAL_METRIC_NAME, memStats.PauseTotalNs, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_NUM_GC_METRIC_NAME, memStats.NumGC, ts)
+		INTERNAL_GO_MEM_STATS_NUM_GC_METRIC_NAME, memStats.NumGC, promTs)
 	fmt.Fprintf(buf, intValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_NUM_FORCED_GC_METRIC_NAME, memStats.NumForcedGC, ts)
+		INTERNAL_GO_MEM_STATS_NUM_FORCED_GC_METRIC_NAME, memStats.NumForcedGC, promTs)
 	fmt.Fprintf(buf, floatValueMetricFmt,
-		INTERNAL_GO_MEM_STATS_GC_CPU_FRACTION_METRIC_NAME, memStats.GCCPUFraction, ts)
+		INTERNAL_GO_MEM_STATS_GC_CPU_FRACTION_METRIC_NAME, memStats.GCCPUFraction, promTs)
 	if pCpu >= 0 {
-		fmt.Fprintf(buf, floatValueMetricFmt, INTERNAL_PROC_PCPU_METRIC_NAME, pCpu, ts)
-		fmt.Fprintf(buf, intValueMetricFmt, INTERNAL_PROC_VSIZE_METRIC_NAME, vSize, ts)
-		fmt.Fprintf(buf, intValueMetricFmt, INTERNAL_PROC_RSS_METRIC_NAME, rss, ts)
+		fmt.Fprintf(buf, floatValueMetricFmt, INTERNAL_PROC_PCPU_METRIC_NAME, pCpu, promTs)
+		fmt.Fprintf(buf, intValueMetricFmt, INTERNAL_PROC_VSIZE_METRIC_NAME, vSize, promTs)
+		fmt.Fprintf(buf, intValueMetricFmt, INTERNAL_PROC_RSS_METRIC_NAME, rss, promTs)
 	}
+
+	metricsUp.lck.Lock()
+	for metric, val := range metricsUp.metrics {
+		fmt.Fprintf(buf, "%s %d %s\n", metric, val, promTs)
+	}
+	metricsUp.lck.Unlock()
+	buf.WriteByte('\n')
 }
 
-func GenerateInternalMetrics(mGenCtx MetricsGenContext) {
-	internalMetricsCtx := mGenCtx.(*InternalMetricsContext)
+func (internalMetricsCtx *InternalMetricsContext) GenerateMetrics() {
 	wChan := internalMetricsCtx.wChan
 	bufPool := internalMetricsCtx.bufPool
 	buf := bufPool.GetBuffer()
 
 	GenerateInternalResourceMetrics(internalMetricsCtx, buf)
-	// if buf.Len() >= BUF_MAX_SIZE {
-	// 	if wChan != nil {
-	// 		wChan <- buf
-	// 	} else {
-	// 		bufPool.ReturnBuffer(buf)
-	// 	}
-	// 	buf = bufPool.GetBuffer()
-	// }
 
 	// Flush the last buffer:
 	if buf.Len() > 0 && wChan != nil {
@@ -300,6 +318,10 @@ func GenerateInternalMetrics(mGenCtx MetricsGenContext) {
 		bufPool.ReturnBuffer(buf)
 	}
 
+}
+
+func GenerateInternalMetrics(mGenCtx MetricsGenContext) {
+	mGenCtx.(*InternalMetricsContext).GenerateMetrics()
 }
 
 func init() {

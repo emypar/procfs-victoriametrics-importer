@@ -195,6 +195,7 @@ func GenerateProcInterruptsMetrics(mGenCtx MetricsGenContext) {
 	}
 
 	if buf.Len() > 0 && wChan != nil {
+		buf.WriteByte('\n')
 		wChan <- buf
 	} else {
 		bufPool.ReturnBuffer(buf)

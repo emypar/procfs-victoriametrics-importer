@@ -46,6 +46,8 @@ const (
 	PROC_PID_FILE_BUFFER_MAX_LENGTH = 0x10000
 
 	// Stats metrics:
+	PROC_PID_METRICS_UP_GROUP_NAME                         = "proc_pid_metrics"
+	PROC_PID_METRICS_UP_INTERVAL_LABEL_NAME                = "interval"
 	PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME          = "proc_pid_metrics_stats_pid_count"
 	PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME          = "proc_pid_metrics_stats_tid_count"
 	PROC_PID_METRICS_STATS_ACTIVE_COUNT_METRICS_NAME       = "proc_pid_metrics_stats_active_count"
@@ -1202,6 +1204,10 @@ func GeneratePidMetrics(
 		}
 	}
 
+	if generatedCount > 0 {
+		buf.WriteByte('\n')
+	}
+
 	// Update the cache entry:
 	pmce.Timestamp = timestamp
 
@@ -1330,7 +1336,7 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 		)
 		fmt.Fprintf(
 			buf,
-			`
+			`%s{%s} %d %s
 %s{%s} %d %s
 %s{%s} %d %s
 %s{%s} %d %s
@@ -1340,7 +1346,7 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 %s{%s} %d %s
 %s{%s} %d %s
 %s{%s} %d %s
-%s{%s} %d %s
+
 `,
 			PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME, statsLabels, pmStats.PidCount, promTs,
 			PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME, statsLabels, pmStats.TidCount, promTs,
