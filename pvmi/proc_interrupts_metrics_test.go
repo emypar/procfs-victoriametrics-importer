@@ -20,11 +20,10 @@ type ProcInterruptsTestCase struct {
 	Name                    string
 	ProcfsRoot              string
 	PrevInterrupts          procfs.Interrupts
-	PrevTimestamp           int64
 	PrevRefreshGroupNum     map[string]int64
 	PrevNextRefreshGroupNum int64
 	WantInterrupts          procfs.Interrupts
-	Timestamp               int64
+	Timestamp               time.Time
 	WantRefreshGroupNum     map[string]int64
 	WantMetrics             []string
 	FullMetricsFactor       int64
@@ -39,7 +38,7 @@ const (
 
 func procInterruptsTest(t *testing.T, tc *ProcInterruptsTestCase) {
 	timeNow := func() time.Time {
-		return time.UnixMilli(tc.Timestamp)
+		return tc.Timestamp
 	}
 
 	bufPool := NewBufferPool(256)

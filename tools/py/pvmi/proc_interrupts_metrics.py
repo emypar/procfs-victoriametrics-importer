@@ -7,12 +7,12 @@ from typing import List, Optional
 import procfs
 from metrics_common_test import TestHostname, TestJob
 
-from .common import Metric
+from .common import Metric, ts_to_prometheus_ts
 
 
 def proc_interrupts_metrics(
     interrupts: procfs.Interrupts,
-    ts: Optional[int] = None,
+    ts: Optional[float] = None,
     _hostname: str = TestHostname,
     _job: str = TestJob,
     _clear_pseudo_only: bool = False,
@@ -21,6 +21,7 @@ def proc_interrupts_metrics(
     for irq, interrupt in interrupts.items():
         if ts is None:
             ts = interrupt._ts
+        prom_ts = ts_to_prometheus_ts(ts)
         if not _clear_pseudo_only:
             metrics.extend(
                 Metric(
@@ -28,7 +29,7 @@ def proc_interrupts_metrics(
                         f'proc_interrupts_total{{hostname="{_hostname}",job="{_job}",interrupt="{irq}",cpu="{cpu}"}}'
                     ),
                     val=val,
-                    ts=ts,
+                    ts=prom_ts,
                 )
                 for (cpu, val) in enumerate(interrupt.Values)
             )
@@ -38,7 +39,7 @@ def proc_interrupts_metrics(
                     f'proc_interrupts_info{{hostname="{_hostname}",job="{_job}",interrupt="{irq}",devices="{interrupt.Devices}",info="{interrupt.Info}"}}'
                 ),
                 val=0 if _clear_pseudo_only else 1,
-                ts=ts,
+                ts=prom_ts,
             )
         )
     return metrics

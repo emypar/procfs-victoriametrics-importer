@@ -12,7 +12,7 @@ from metrics_common_test import TestdataProcfsRoot, TestdataTestCasesDir
 from tools_common import StructBase, rel_path_to_file, save_to_json_file
 
 from . import proc_interrupts_metrics
-from .common import Metric, metrics_delta
+from .common import Metric, metrics_delta, ts_to_go_time
 
 # The following should match pvmi/proc_stat_metrics_test.go:
 PROC_INTERRUPTS_METRICS_TEST_CASES_FILE_NAME = "proc_interrupts_metrics_test_cases.json"
@@ -52,11 +52,12 @@ def load_pirqtc(
     for interrupt in proc_interrupts.values():
         ts = interrupt._ts
         break
+    timestamp = ts_to_go_time(ts)
     tc = ProcInterruptsMetricsTestCase(
         Name=name,
         ProcfsRoot=rel_path_to_file(procfs_root),
         WantInterrupts=proc_interrupts,
-        Timestamp=ts,
+        Timestamp=timestamp,
         WantMetrics=proc_interrupts_metrics.proc_interrupts_metrics(proc_interrupts),
         FullMetricsFactor=full_metrics_factor,
     )
@@ -82,6 +83,7 @@ def make_full_refresh_pirqtc(
     for interrupt in proc_interrupts.values():
         ts = interrupt._ts
         break
+    timestamp = ts_to_go_time(ts)
     irq_list = sorted(proc_interrupts)
     want_next_refresh_group_num = len(proc_interrupts)
     for full_metrics_factor in range(2, len(proc_interrupts) + 2):
@@ -105,7 +107,7 @@ def make_full_refresh_pirqtc(
                 PrevRefreshGroupNum=refresh_group_num,
                 PrevNextRefreshGroupNum=want_next_refresh_group_num,
                 WantInterrupts=proc_interrupts,
-                Timestamp=ts,
+                Timestamp=timestamp,
                 WantMetrics=want_metrics,
                 FullMetricsFactor=full_metrics_factor,
                 RefreshCycleNum=refresh_cycle_num,
@@ -126,6 +128,7 @@ def make_removed_irq_pirqtc(
     for interrupt in proc_interrupts.values():
         ts = interrupt._ts
         break
+    timestamp = ts_to_go_time(ts)
     prev_proc_interrupts = deepcopy(proc_interrupts)
     prev_proc_interrupts.update(REMOVED_PROC_INTERRUPTS)
     prev_irq_list = sorted(prev_proc_interrupts)
@@ -146,7 +149,7 @@ def make_removed_irq_pirqtc(
         PrevRefreshGroupNum=prev_refresh_group_num,
         PrevNextRefreshGroupNum=want_next_refresh_group_num,
         WantInterrupts=proc_interrupts,
-        Timestamp=ts,
+        Timestamp=timestamp,
         WantMetrics=proc_interrupts_metrics.proc_interrupts_metrics(
             REMOVED_PROC_INTERRUPTS,
             ts=ts,
@@ -171,6 +174,7 @@ def make_delta_pirqtc(
     for interrupt in proc_interrupts.values():
         ts = interrupt._ts
         break
+    timestamp = ts_to_go_time(ts)
     irq_list = sorted(proc_interrupts)
     # Ensure that no irq will have a full refresh cycle:
     full_metrics_factor = 2 * len(irq_list) + 1
@@ -195,7 +199,7 @@ def make_delta_pirqtc(
                 PrevRefreshGroupNum=refresh_group_num,
                 PrevNextRefreshGroupNum=next_refresh_group_num,
                 WantInterrupts=proc_interrupts,
-                Timestamp=ts,
+                Timestamp=timestamp,
                 WantMetrics=want_metrics,
                 FullMetricsFactor=full_metrics_factor,
                 RefreshCycleNum=refresh_cycle_num,

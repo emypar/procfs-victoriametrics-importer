@@ -148,7 +148,7 @@ def make_removed_device_pndtc(
         break
     timestamp = ts_to_go_time(ts)
     prev_ts = ts - PROC_NET_DEV_METRICS_DELTA_INTERVAL_SECOND
-    prev_timestamp = ts_to_go_time(prev_ts)    
+    prev_timestamp = ts_to_go_time(prev_ts)
     prev_proc_net_dev = deepcopy(proc_net_dev)
     prev_proc_net_dev[PROC_NET_DEV_REMOVED_DEVICE_NAME] = procfs.NetDevLine(
         name=PROC_NET_DEV_REMOVED_DEVICE_NAME
@@ -205,7 +205,7 @@ def make_delta_pndtc(
     timestamp = ts_to_go_time(ts)
     prev_ts = ts - PROC_NET_DEV_METRICS_DELTA_INTERVAL_SECOND
     prev_prev_ts = prev_ts - (ts - prev_ts)
-    prev_timestamp = ts_to_go_time(prev_ts)    
+    prev_timestamp = ts_to_go_time(prev_ts)
     device_list = sorted(proc_net_dev)
     refresh_group_num = {device: i for (i, device) in enumerate(device_list)}
     next_refresh_group_num = len(proc_net_dev)

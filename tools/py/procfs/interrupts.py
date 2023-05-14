@@ -9,7 +9,6 @@ import time
 from typing import Dict, List
 
 from metrics_common_test import TestdataProcfsRoot
-from tools_common import ts_to_prometheus_ts
 
 from .common import ProcfsStructBase
 
@@ -32,9 +31,7 @@ def load_interrupts(
     _use_ts_from_file: bool = True,
 ) -> Interrupts:
     interrupts_path = os.path.join(procfs_root, "interrupts")
-    ts = ts_to_prometheus_ts(
-        os.stat(interrupts_path).st_mtime if _use_ts_from_file else time.time()
-    )
+    ts = os.stat(interrupts_path).st_mtime if _use_ts_from_file else time.time()
     interrupts = dict()
     with open(interrupts_path, "rt") as f:
         line = f.readline()

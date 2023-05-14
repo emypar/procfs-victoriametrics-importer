@@ -17,7 +17,7 @@ ProcfsStructFieldSpec = str
 
 @dataclasses.dataclass
 class ProcfsStructBase(StructBase):
-    _ts: int = 0
+    _ts: float = 0
 
     def get_field_spec_list(self, recurse: bool = True) -> List[ProcfsStructFieldSpec]:
         field_spec_list = []

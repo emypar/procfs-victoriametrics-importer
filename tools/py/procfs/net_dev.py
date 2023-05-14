@@ -10,7 +10,6 @@ import time
 from typing import Dict, Optional
 
 from metrics_common_test import TestdataProcfsRoot
-from tools_common import ts_to_prometheus_ts
 
 from .common import ProcfsStructBase
 
