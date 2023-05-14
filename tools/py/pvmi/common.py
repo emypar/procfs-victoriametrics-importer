@@ -49,9 +49,9 @@ def prometheus_ts_to_ts(prom_ts: int) -> float:
     return float(prom_ts) / 1000.0
 
 
-def ts_to_go_time(ts: Optional[float] = None) -> str:
+def ts_to_go_time(ts: Optional[float] = 0) -> str:
     return datetime.fromtimestamp(
-        ts if ts is not None else time.time, timezone.utc
+        ts if ts is not None else time.time(), timezone.utc
     ).isoformat()
 
 

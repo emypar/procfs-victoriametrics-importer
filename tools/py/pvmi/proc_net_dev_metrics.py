@@ -7,28 +7,28 @@ from typing import List, Optional
 import procfs
 from metrics_common_test import TestHostname, TestJob
 
-from .common import Metric
+from .common import Metric, ts_to_prometheus_ts
 
 UNIT64_ROLLOVER_CORRECTION = 1 << 64
 
 
 def proc_net_dev_line_metrics(
     net_dev_line: procfs.NetDevLine,
-    ts: Optional[int] = None,
+    ts: Optional[float] = None,
     prev_net_dev_line: Optional[procfs.NetDevLine] = None,
-    prev_ts: Optional[int] = None,
+    prev_ts: Optional[float] = None,
     _hostname: str = TestHostname,
     _job: str = TestJob,
-    _full_metrics: bool = True,
 ) -> List[Metric]:
     if ts is None:
         ts = net_dev_line._ts
+    prom_ts = ts_to_prometheus_ts(ts)
     metrics = []
     device = net_dev_line.name
     if prev_net_dev_line is not None:
         if prev_ts is None:
             prev_ts = prev_net_dev_line._ts
-        d_time = (ts - prev_ts) / 1000.0  # Prometheus TS -> seconds
+        d_time = ts - prev_ts
         for metric_name, field_spec, side in [
             ("proc_net_dev_bps", "rx_bytes", "rx"),
             ("proc_net_dev_bps", "tx_bytes", "tx"),
@@ -36,15 +36,13 @@ def proc_net_dev_line_metrics(
             d_val = net_dev_line.get_field(field_spec) - prev_net_dev_line.get_field(
                 field_spec
             )
-            if not _full_metrics and d_val == 0:
-                continue
             if d_val < 0:
                 d_val += UNIT64_ROLLOVER_CORRECTION
             metrics.append(
                 Metric(
                     metric=f'{metric_name}{{hostname="{_hostname}",job="{_job}",device="{device}",side="{side}"}}',
                     val=int(d_val / d_time) * 8,
-                    ts=ts,
+                    ts=prom_ts,
                 )
             )
     for metric_name, field_spec, side in [
@@ -67,7 +65,7 @@ def proc_net_dev_line_metrics(
             Metric(
                 metric=f'{metric_name}{{hostname="{_hostname}",job="{_job}",device="{device}",side="{side}"}}',
                 val=net_dev_line.get_field(field_spec),
-                ts=ts,
+                ts=prom_ts,
             )
         )
     return metrics
@@ -75,9 +73,9 @@ def proc_net_dev_line_metrics(
 
 def proc_net_dev_metrics(
     net_dev: procfs.NetDev,
-    ts: Optional[int] = None,
+    ts: Optional[float] = None,
     prev_net_dev: Optional[procfs.NetDev] = None,
-    prev_ts: Optional[int] = None,
+    prev_ts: Optional[float] = None,
     _hostname: str = TestHostname,
     _job: str = TestJob,
 ) -> List[Metric]:
@@ -90,7 +88,7 @@ def proc_net_dev_metrics(
                     ts=ts,
                     prev_net_dev_line=(
                         prev_net_dev.get(net_dev_line.name)
-                        if prev_net_dev is not prev_net_dev
+                        if prev_net_dev is not None
                         else None
                     ),
                     prev_ts=prev_ts,

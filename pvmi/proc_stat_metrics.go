@@ -377,55 +377,55 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 			crtPCpu.User = pCpu
 
 			pCpu = float64(cpuStat.Nice-prevCpuStat.Nice) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.Nice*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.Nice {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_NICE_VALUE, pCpu, promTs)
 			}
 			crtPCpu.Nice = pCpu
 
 			pCpu = float64(cpuStat.System-prevCpuStat.System) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.System*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.System {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_SYSTEM_VALUE, pCpu, promTs)
 			}
 			crtPCpu.System = pCpu
 
 			pCpu = float64(cpuStat.Idle-prevCpuStat.Idle) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.Idle*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.Idle {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IDLE_VALUE, pCpu, promTs)
 			}
 			crtPCpu.Idle = pCpu
 
 			pCpu = float64(cpuStat.Iowait-prevCpuStat.Iowait) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.Iowait*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.Iowait {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IOWAIT_VALUE, pCpu, promTs)
 			}
 			crtPCpu.Iowait = pCpu
 
 			pCpu = float64(cpuStat.IRQ-prevCpuStat.IRQ) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.IRQ*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.IRQ {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IRQ_VALUE, pCpu, promTs)
 			}
 			crtPCpu.IRQ = pCpu
 
 			pCpu = float64(cpuStat.SoftIRQ-prevCpuStat.SoftIRQ) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.SoftIRQ*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.SoftIRQ {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_SOFTIRQ_VALUE, pCpu, promTs)
 			}
 			crtPCpu.SoftIRQ = pCpu
 
 			pCpu = float64(cpuStat.Steal-prevCpuStat.Steal) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.Steal*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.Steal {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_STEAL_VALUE, pCpu, promTs)
 			}
 			crtPCpu.Steal = pCpu
 
 			pCpu = float64(cpuStat.Guest-prevCpuStat.Guest) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.Guest*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.Guest {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUEST_VALUE, pCpu, promTs)
 			}
 			crtPCpu.Guest = pCpu
 
 			pCpu = float64(cpuStat.GuestNice-prevCpuStat.GuestNice) * pCpuFactor
-			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.GuestNice*100) {
+			if prevPCpu == nil || pCpu != prevPCpu.GuestNice {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUESTNICE_VALUE, pCpu, promTs)
 			}
 			crtPCpu.GuestNice = pCpu

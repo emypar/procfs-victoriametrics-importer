@@ -44,6 +44,9 @@ var ProcNetDevMetricsLog = Log.WithField(
 	"ProcNetDevMetrics",
 )
 
+type NetDevBps map[string]uint64
+type NetDevRefreshGroupNum map[string]int64
+
 // The context for proc net dev metrics generation:
 type ProcNetDevMetricsContext struct {
 	// Interval, needed to qualify as a MetricsGenContext
@@ -60,12 +63,13 @@ type ProcNetDevMetricsContext struct {
 	// The group# above is assigned at the time when a device is discovered, per
 	// device, based on modulo fullMetricsFactor counter:
 	newDevices          []string
-	refreshGroupNum     map[string]int64
+	refreshGroupNum     NetDevRefreshGroupNum
 	nextRefreshGroupNum int64
 	// procfs filesystem for procfs parsers:
 	fs procfs.FS
 	// The previous state, needed for delta strategy:
-	prevNetDev procfs.NetDev
+	prevNetDev           procfs.NetDev
+	prevRxBps, prevTxBps NetDevBps
 	// Timestamp of the prev scan:
 	prevTs time.Time
 	// Precomputed format for generating the metrics:
@@ -118,18 +122,20 @@ func NewProcNetDevMetricsContext(
 		fullMetricsFactor:   fullMetricsFactor,
 		refreshCycleNum:     0,
 		newDevices:          make([]string, 128)[:0],
-		refreshGroupNum:     make(map[string]int64),
+		refreshGroupNum:     make(NetDevRefreshGroupNum),
 		nextRefreshGroupNum: 0,
 		fs:                  fs,
 		counterMetricFmt: fmt.Sprintf(
 			`%%s{%s="%s",%s="%s",%s="%%s",%s="%%s"} %%d %%s`+"\n",
 			HOSTNAME_LABEL_NAME, hostname, JOB_LABEL_NAME, job, PROC_NET_DEV_DEVICE_LABEL_NAME, PROC_NET_DEV_SIDE_LABEL_NAME,
 		),
-		wChan:    wChan,
-		hostname: hostname,
-		job:      job,
-		timeNow:  timeNow,
-		bufPool:  bufPool,
+		prevRxBps: make(NetDevBps),
+		prevTxBps: make(NetDevBps),
+		wChan:     wChan,
+		hostname:  hostname,
+		job:       job,
+		timeNow:   timeNow,
+		bufPool:   bufPool,
 	}
 	return procNetDevMetricsCtx, nil
 }
@@ -157,6 +163,7 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 	bufPool := procNetDevMetricsCtx.bufPool
 	buf := bufPool.GetBuffer()
 	wChan := procNetDevMetricsCtx.wChan
+	prevRxBps, prevTxBps := procNetDevMetricsCtx.prevRxBps, procNetDevMetricsCtx.prevTxBps
 	for device, netDevLine := range netDev {
 		fullMetrics := !deltaStrategy
 		prevNetDevLine, exists := prevNetDev[device]
@@ -168,16 +175,36 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 				newDevices = append(newDevices, device)
 			}
 		}
-		if exists && (fullMetrics || prevNetDevLine.RxBytes != netDevLine.RxBytes) {
-			fmt.Fprintf(
-				buf,
-				counterMetricFmt,
-				PROC_NET_DEV_BPS_METRIC_NAME,
-				device,
-				PROC_NET_DEV_SIDE_RX_LABEL_VALUE,
-				uint64(float64(netDevLine.RxBytes-prevNetDevLine.RxBytes)/deltaTs*8.),
-				promTs,
-			)
+		if exists {
+			prevBps, exists := prevRxBps[device]
+			bps := uint64(float64(netDevLine.RxBytes-prevNetDevLine.RxBytes) / deltaTs * 8.)
+			if fullMetrics || !exists || prevBps != bps {
+				fmt.Fprintf(
+					buf,
+					counterMetricFmt,
+					PROC_NET_DEV_BPS_METRIC_NAME,
+					device,
+					PROC_NET_DEV_SIDE_RX_LABEL_VALUE,
+					bps,
+					promTs,
+				)
+			}
+			prevRxBps[device] = bps
+
+			prevBps, exists = prevTxBps[device]
+			bps = uint64(float64(netDevLine.TxBytes-prevNetDevLine.TxBytes) / deltaTs * 8.)
+			if fullMetrics || !exists || prevBps != bps {
+				fmt.Fprintf(
+					buf,
+					counterMetricFmt,
+					PROC_NET_DEV_BPS_METRIC_NAME,
+					device,
+					PROC_NET_DEV_SIDE_TX_LABEL_VALUE,
+					bps,
+					promTs,
+				)
+			}
+			prevTxBps[device] = bps
 		}
 		if fullMetrics || prevNetDevLine.RxPackets != netDevLine.RxPackets {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxPackets, promTs)
@@ -199,17 +226,6 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 		}
 		if fullMetrics || prevNetDevLine.RxMulticast != netDevLine.RxMulticast {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_MULTICAST_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxMulticast, promTs)
-		}
-		if exists && (fullMetrics || prevNetDevLine.TxBytes != netDevLine.TxBytes) {
-			fmt.Fprintf(
-				buf,
-				counterMetricFmt,
-				PROC_NET_DEV_BPS_METRIC_NAME,
-				device,
-				PROC_NET_DEV_SIDE_TX_LABEL_VALUE,
-				uint64(float64(netDevLine.TxBytes-prevNetDevLine.TxBytes)/deltaTs*8.),
-				promTs,
-			)
 		}
 		if fullMetrics || prevNetDevLine.TxPackets != netDevLine.TxPackets {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxPackets, promTs)
@@ -238,6 +254,14 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 		wChan <- buf
 	} else {
 		bufPool.ReturnBuffer(buf)
+	}
+
+	// Clean up out-of-scope devices:
+	for device := range prevRxBps {
+		if _, exists := netDev[device]; !exists {
+			delete(prevRxBps, device)
+			delete(prevTxBps, device)
+		}
 	}
 
 	// Some housekeeping if delta strategy is in effect:
@@ -279,11 +303,11 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 			refreshCycleNum = 0
 		}
 		procNetDevMetricsCtx.refreshCycleNum = refreshCycleNum
-
-		// Finally update the prev scan info:
-		procNetDevMetricsCtx.prevNetDev = netDev
-		procNetDevMetricsCtx.prevTs = statsTs
 	}
+
+	// Finally update the prev scan info:
+	procNetDevMetricsCtx.prevNetDev = netDev
+	procNetDevMetricsCtx.prevTs = statsTs
 }
 
 var ProcNetDevMetricsScanIntervalArg = flag.Float64(

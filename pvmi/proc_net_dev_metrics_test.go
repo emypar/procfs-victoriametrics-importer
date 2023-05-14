@@ -20,12 +20,14 @@ type ProcNetDevTestCase struct {
 	Name                    string
 	ProcfsRoot              string
 	PrevNetDev              procfs.NetDev
-	PrevTimestamp           int64
-	PrevRefreshGroupNum     map[string]int64
+	PrevRxBps, PrevTxBps    NetDevBps
+	PrevTimestamp           time.Time
+	PrevRefreshGroupNum     NetDevRefreshGroupNum
 	PrevNextRefreshGroupNum int64
 	WantNetDev              procfs.NetDev
-	Timestamp               int64
-	WantRefreshGroupNum     map[string]int64
+	WantRxBps, WantTxBps    NetDevBps
+	Timestamp               time.Time
+	WantRefreshGroupNum     NetDevRefreshGroupNum
 	WantMetrics             []string
 	FullMetricsFactor       int64
 	RefreshCycleNum         int64
@@ -39,7 +41,7 @@ const (
 
 func procNetDevTest(t *testing.T, tc *ProcNetDevTestCase) {
 	timeNow := func() time.Time {
-		return time.UnixMilli(tc.Timestamp)
+		return tc.Timestamp
 	}
 
 	bufPool := NewBufferPool(256)
@@ -56,8 +58,24 @@ func procNetDevTest(t *testing.T, tc *ProcNetDevTestCase) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	procNetDevMetricsCtx.prevNetDev = tc.PrevNetDev
-	procNetDevMetricsCtx.prevTs = time.UnixMilli(tc.PrevTimestamp)
+	if tc.PrevNetDev != nil {
+		procNetDevMetricsCtx.prevNetDev = make(procfs.NetDev)
+		for device, deviceLine := range tc.PrevNetDev {
+			procNetDevMetricsCtx.prevNetDev[device] = deviceLine
+		}
+	}
+	if tc.PrevRxBps != nil {
+		for device, bps := range tc.PrevRxBps {
+			procNetDevMetricsCtx.prevRxBps[device] = bps
+		}
+	}
+	if tc.PrevTxBps != nil {
+		for device, bps := range tc.PrevRxBps {
+			procNetDevMetricsCtx.prevTxBps[device] = bps
+		}
+	}
+
+	procNetDevMetricsCtx.prevTs = tc.PrevTimestamp
 	procNetDevMetricsCtx.refreshCycleNum = tc.RefreshCycleNum
 	if tc.PrevRefreshGroupNum != nil {
 		procNetDevMetricsCtx.refreshGroupNum = tc.PrevRefreshGroupNum
@@ -84,20 +102,42 @@ func procNetDevTest(t *testing.T, tc *ProcNetDevTestCase) {
 	if wantBufPoolCount != gotBufPoolCount {
 		t.Errorf("bufPool.CheckedOutCount(): want %d, got %d", wantBufPoolCount, gotBufPoolCount)
 	}
+
+	var r testutils.DiffReporter
+
+	if !cmp.Equal(
+		tc.WantNetDev,
+		procNetDevMetricsCtx.prevNetDev,
+		cmp.Reporter(&r),
+	) {
+		t.Errorf("procfs.NetDev mismatch (-want +got):\n%s", r.String())
+	}
+
+	if tc.WantRxBps != nil && !cmp.Equal(
+		tc.WantRxBps,
+		procNetDevMetricsCtx.prevRxBps,
+		cmp.Reporter(&r),
+	) {
+		t.Errorf("prevRxBps mismatch (-want +got):\n%s", r.String())
+	}
+
+	if tc.WantTxBps != nil && !cmp.Equal(
+		tc.WantTxBps,
+		procNetDevMetricsCtx.prevTxBps,
+		cmp.Reporter(&r),
+	) {
+		t.Errorf("prevTxBps mismatch (-want +got):\n%s", r.String())
+	}
+
 	// Note: certain fields are updated only for delta strategy:
 	if tc.FullMetricsFactor > 1 {
-		if diff := cmp.Diff(
-			tc.WantNetDev,
-			procNetDevMetricsCtx.prevNetDev,
-		); diff != "" {
-			t.Errorf("procfs.NetDev mismatch (-want +got):\n%s", diff)
-		}
 		if tc.WantRefreshGroupNum != nil {
-			if diff := cmp.Diff(
+			if !cmp.Equal(
 				tc.WantRefreshGroupNum,
 				procNetDevMetricsCtx.refreshGroupNum,
-			); diff != "" {
-				t.Errorf("refreshGroupNum mismatch (-want +got):\n%s", diff)
+				cmp.Reporter(&r),
+			) {
+				t.Errorf("refreshGroupNum mismatch (-want +got):\n%s", r.String())
 			}
 		}
 		if tc.WantNextRefreshGroupNum != procNetDevMetricsCtx.nextRefreshGroupNum {
@@ -107,6 +147,7 @@ func procNetDevTest(t *testing.T, tc *ProcNetDevTestCase) {
 			)
 		}
 	}
+
 	wantMetrics := testutils.DuplicateStrings(tc.WantMetrics, true)
 	if diff := cmp.Diff(wantMetrics, gotMetrics); diff != "" {
 		t.Errorf("Metrics mismatch (-want +got):\n%s", diff)

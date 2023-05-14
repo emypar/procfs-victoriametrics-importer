@@ -45,9 +45,7 @@ def load_net_dev(
     _use_ts_from_file: bool = True,
 ) -> Optional[NetDev]:
     net_dev_path = os.path.join(procfs_root, "net/dev")
-    ts = ts_to_prometheus_ts(
-        os.stat(net_dev_path).st_mtime if _use_ts_from_file else time.time()
-    )
+    ts = os.stat(net_dev_path).st_mtime if _use_ts_from_file else time.time()
     net_dev = dict()
     with open(net_dev_path, "rt") as f:
         n_line = 0

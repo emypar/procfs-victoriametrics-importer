@@ -858,10 +858,8 @@ func GeneratePidMetrics(
 		//                    ( <------ pCpuFactor ------> )
 		pCpuFactor := pidMetricsCtx.clktckSec / timestamp.Sub(pmce.Timestamp).Seconds() * 100.
 		UTimePct, STimePct := float64(deltaUTime)*pCpuFactor, float64(deltaSTime)*pCpuFactor
-		// Note: when comparing %, use the same precision as that used for display (2DP):
 		if fullMetrics ||
-			int(pmce.PrevUTimePct*100.) != int(UTimePct*100.) ||
-			int(pmce.PrevSTimePct*100.) != int(STimePct*100.) {
+			pmce.PrevUTimePct != UTimePct || pmce.PrevSTimePct != STimePct {
 			fmt.Fprintf(
 				buf,
 				"%s{%s} %.02f %s\n%s{%s} %.02f %s\n%s{%s} %.02f %s\n",
