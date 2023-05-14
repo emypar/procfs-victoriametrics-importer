@@ -19,6 +19,18 @@ const (
 
 	DEFAULT_PROCFS_ROOT = "/proc"
 
+	// Certain metrics have values that would exceed the 15 (15.95) precision of
+	// `float64`, e.g. `uint64`. Such values will be split in two metrics,
+	// `..._low32` and `..._high32` where `low32` == `value & 0xffffffff` and
+	// `high32` = `value >> 32`. This is useful for deltas or rates where the
+	// operation is applied 1st to each of the 2 halves which are then combined.
+	// e.g.: `delta = delta(high32) * 4294967296 + delta(low32)`, with the
+	// underlying assumption that the delta is fairly small. This is how the
+	// byte count is handled for interfaces. Define the distinguished suffixes
+	// for the low and high halves:
+	LOW32_METRICS_NAME_SUFFIX  = "_low32"
+	HIGH32_METRICS_NAME_SUFFIX = "_high32"
+
 	// All metrics will have the following labels:
 	HOSTNAME_LABEL_NAME     = "hostname"
 	JOB_LABEL_NAME          = "job"

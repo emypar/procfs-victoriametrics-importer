@@ -16,6 +16,10 @@ sys.path.extend(py_tools_dir)
 
 MetricsFnMap = Dict[Callable, bool]
 
+# See metrics.md for large/high precision metrics which are split into 2 halves: _high32 and _low32:
+LOW32_METRICS_NAME_SUFFIX = "_low32"
+HIGH32_METRICS_NAME_SUFFIX = "_high32"
+
 
 @dataclasses.dataclass
 class Metric:
@@ -82,4 +86,24 @@ def metrics_delta(
         val = m.val if m.valfmt is None else f"{m.val:{m.valfmt}}"
         if (m.metric, val) not in prev_metrics_name_val:
             delta_metrics.append(m)
+    # Ensure that both halves are present for _high32/_low32 large values split:
+    want_value_split_metrics = set()
+    found_value_split_metrics = set()
+    for m in delta_metrics:
+        name = m.name()
+        if name.endswith(LOW32_METRICS_NAME_SUFFIX):
+            want_metric = m.metric.replace(
+                LOW32_METRICS_NAME_SUFFIX + "{", HIGH32_METRICS_NAME_SUFFIX + "{"
+            )
+        elif name.endswith(HIGH32_METRICS_NAME_SUFFIX):
+            want_metric = m.metric.replace(
+                HIGH32_METRICS_NAME_SUFFIX + "{", LOW32_METRICS_NAME_SUFFIX + "{"
+            )
+        else:
+            continue
+        want_value_split_metrics.add(want_metric)
+        found_value_split_metrics.add(m.metric)
+    must_add_metrics = want_value_split_metrics - found_value_split_metrics
+    if must_add_metrics:
+        delta_metrics.extend(m for m in metrics if m.metric in must_add_metrics)
     return delta_metrics

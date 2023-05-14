@@ -42,6 +42,10 @@ Example: `proc_pid_stat_state` transitioning from state `R` to `S` at `t2`:
 
 
 
+## Handling large/high precision values
+
+Certain metrics have values that would exceed the 15 (15.95) precision of `float64`, e.g. `uint64`. Such values will be split in two metrics, `..._low32` and `..._high32` where `low32` == `value & 0xffffffff` and `high32` = `value >> 32`. This is useful for deltas or rates where the operation is applied 1st to each of the 2 halves which are then combined. e.g.: `delta = delta(high32) * 4294967296 + delta(low32)`, with the underlying assumption that the delta is fairly small. This is how the byte count is handled for interfaces.
+
 ## Metrics
 
 ### proc_buddyinfo_count
@@ -133,26 +137,28 @@ Source: `/proc/PID/status` or `/proc/PID/task/TID/status`
 Parser: [proc_status.go](https://github.com/prometheus/procfs/blob/master/proc_status.go)
 
 
+**Note:** Memory metrics are generated **only** for processes (PIDs) not threads (TIDs) since all threads in a process share the memory.
+
 | Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
 | proc_pid_status_info | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_<br><br>name=_name_<br>tgid=_tgid_<br>real_uid=_uid_<br>effective_uid=_uid_<br>saved_uid=_uid_<br>filesystem_uid=_uid_<br>real_gid=_gid_<br>effective_gid=_gid_<br>saved_gid=_gid_<br>filesystem_gid=_gid_ | 0/1 | Information associated w/ a process/thread that may change but it is unlikely to do so for the lifespan of a process<br><br>pseudo-categorical |
-| proc_pid_status_vm_peak | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_size | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_lck | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_pin | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_hwm | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_rss | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_rss_anon | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_rss_file | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_rss_shmem | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_data | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_stk | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_exe | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_lib | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_pte | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_pmd | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_vm_swap | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
-| proc_pid_status_hugetbl_pages | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_peak | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_size | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_lck | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_pin | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_hwm | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_rss | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_rss_anon | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_rss_file | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_rss_shmem | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_data | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_stk | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_exe | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_lib | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_pte | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_pmd | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_vm_swap | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
+| proc_pid_status_hugetbl_pages | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_ | Gauge | |
 | proc_pid_status_voluntary_ctxt_switches | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
 | proc_pid_status_nonvoluntary_ctxt_switches | hostname=_hostname_<br>job=_job_<br><br>pid=_pid_<br>starttime=_ticks_<br>tid=_tid_<br>t_starttime=_ticks_ | Counter | |
 
@@ -184,13 +190,14 @@ Parser: [net_dev.go](https://github.com/prometheus/procfs/blob/master/net_dev.go
 
 | Metric | Labels | Type | Obs |
 | ------ | ------ | ----- | --- |
-| proc_net_dev_bps | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Gauge | bits/sec |
-| proc_net_dev_packets_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
-| proc_net_dev_errors_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
-| proc_net_dev_dropped_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
-| proc_net_dev_fifo_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_bytes_total_high32<br>proc_net_dev_bytes_total_low32 | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=`rx`\|`tx` | Counter | The 2 halves of the very large counter, (`uint64`) |
+| proc_net_dev_bps | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=`rx`\|`tx` | Gauge | bits/sec |
+| proc_net_dev_packets_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=`rx`\|`tx` | Counter | |
+| proc_net_dev_errors_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=`rx`\|`tx` | Counter | |
+| proc_net_dev_dropped_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=`rx`\|`tx` | Counter | |
+| proc_net_dev_fifo_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=`rx`\|`tx` | Counter | |
 | proc_net_dev_frame_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx | Counter | |
-| proc_net_dev_compressed_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx\|tx | Counter | |
+| proc_net_dev_compressed_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=`rx`\|`tx` | Counter | |
 | proc_net_dev_multicast_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=rx | Counter | |
 | proc_net_dev_collisions_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=tx | Counter | |
 | proc_net_dev_carrier_total | hostname=_hostname_<br>job=_job_<br><br>device=_name_<br>side=tx | Counter | |

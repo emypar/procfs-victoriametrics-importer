@@ -14,20 +14,23 @@ import (
 )
 
 const (
-	PROC_NET_DEV_BPS_METRIC_NAME        = "proc_net_dev_bps"
-	PROC_NET_DEV_PACKETS_METRIC_NAME    = "proc_net_dev_packets_total"
-	PROC_NET_DEV_ERRORS_METRIC_NAME     = "proc_net_dev_errors_total"
-	PROC_NET_DEV_DROPPED_METRIC_NAME    = "proc_net_dev_dropped_total"
-	PROC_NET_DEV_FIFO_METRIC_NAME       = "proc_net_dev_fifo_total"
-	PROC_NET_DEV_FRAME_METRIC_NAME      = "proc_net_dev_frame_total"
-	PROC_NET_DEV_COMPRESSED_METRIC_NAME = "proc_net_dev_compressed_total"
-	PROC_NET_DEV_MULTICAST_METRIC_NAME  = "proc_net_dev_multicast_total"
-	PROC_NET_DEV_COLLISIONS_METRIC_NAME = "proc_net_dev_collisions_total"
-	PROC_NET_DEV_CARRIER_METRIC_NAME    = "proc_net_dev_carrier_total"
-	PROC_NET_DEV_DEVICE_LABEL_NAME      = "device"
-	PROC_NET_DEV_SIDE_LABEL_NAME        = "side"
-	PROC_NET_DEV_SIDE_RX_LABEL_VALUE    = "rx"
-	PROC_NET_DEV_SIDE_TX_LABEL_VALUE    = "tx"
+	PROC_NET_DEV_BYTES_METRIC_NAME_PREFIX = "proc_net_dev_bytes_total"
+	PROC_NET_DEV_BYTES_HIGH32_METRIC_NAME = PROC_NET_DEV_BYTES_METRIC_NAME_PREFIX + HIGH32_METRICS_NAME_SUFFIX
+	PROC_NET_DEV_BYTES_LOW32_METRIC_NAME  = PROC_NET_DEV_BYTES_METRIC_NAME_PREFIX + LOW32_METRICS_NAME_SUFFIX
+	PROC_NET_DEV_BPS_METRIC_NAME          = "proc_net_dev_bps"
+	PROC_NET_DEV_PACKETS_METRIC_NAME      = "proc_net_dev_packets_total"
+	PROC_NET_DEV_ERRORS_METRIC_NAME       = "proc_net_dev_errors_total"
+	PROC_NET_DEV_DROPPED_METRIC_NAME      = "proc_net_dev_dropped_total"
+	PROC_NET_DEV_FIFO_METRIC_NAME         = "proc_net_dev_fifo_total"
+	PROC_NET_DEV_FRAME_METRIC_NAME        = "proc_net_dev_frame_total"
+	PROC_NET_DEV_COMPRESSED_METRIC_NAME   = "proc_net_dev_compressed_total"
+	PROC_NET_DEV_MULTICAST_METRIC_NAME    = "proc_net_dev_multicast_total"
+	PROC_NET_DEV_COLLISIONS_METRIC_NAME   = "proc_net_dev_collisions_total"
+	PROC_NET_DEV_CARRIER_METRIC_NAME      = "proc_net_dev_carrier_total"
+	PROC_NET_DEV_DEVICE_LABEL_NAME        = "device"
+	PROC_NET_DEV_SIDE_LABEL_NAME          = "side"
+	PROC_NET_DEV_SIDE_RX_LABEL_VALUE      = "rx"
+	PROC_NET_DEV_SIDE_TX_LABEL_VALUE      = "tx"
 
 	DEFAULT_PROC_NET_DEV_METRICS_SCAN_INTERVAL         = 1  // seconds
 	DEFAULT_PROC_NET_DEV_METRICS_FULL_METRICS_INTERVAL = 15 // seconds
@@ -205,6 +208,20 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 				)
 			}
 			prevTxBps[device] = bps
+		}
+		if fullMetrics || prevNetDevLine.RxBytes != netDevLine.RxBytes {
+			fmt.Fprintf(
+				buf, counterMetricFmt+counterMetricFmt,
+				PROC_NET_DEV_BYTES_HIGH32_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxBytes>>32, promTs,
+				PROC_NET_DEV_BYTES_LOW32_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxBytes&0xffffffff, promTs,
+			)
+		}
+		if fullMetrics || prevNetDevLine.TxBytes != netDevLine.TxBytes {
+			fmt.Fprintf(
+				buf, counterMetricFmt+counterMetricFmt,
+				PROC_NET_DEV_BYTES_HIGH32_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxBytes>>32, promTs,
+				PROC_NET_DEV_BYTES_LOW32_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxBytes&0xffffffff, promTs,
+			)
 		}
 		if fullMetrics || prevNetDevLine.RxPackets != netDevLine.RxPackets {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxPackets, promTs)

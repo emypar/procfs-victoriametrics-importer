@@ -7,7 +7,12 @@ from typing import List, Optional
 import procfs
 from metrics_common_test import TestHostname, TestJob
 
-from .common import Metric, ts_to_prometheus_ts
+from .common import (
+    HIGH32_METRICS_NAME_SUFFIX,
+    LOW32_METRICS_NAME_SUFFIX,
+    Metric,
+    ts_to_prometheus_ts,
+)
 
 UNIT64_ROLLOVER_CORRECTION = 1 << 64
 
@@ -45,6 +50,25 @@ def proc_net_dev_line_metrics(
                     ts=prom_ts,
                 )
             )
+    for metric_name, field_spec, side in [
+        ("proc_net_dev_bytes_total", "rx_bytes", "rx"),
+        ("proc_net_dev_bytes_total", "tx_bytes", "tx"),
+    ]:
+        val = net_dev_line.get_field(field_spec)
+        metrics.extend(
+            [
+                Metric(
+                    metric=f'{metric_name}{HIGH32_METRICS_NAME_SUFFIX}{{hostname="{_hostname}",job="{_job}",device="{device}",side="{side}"}}',
+                    val=val >> 32,
+                    ts=prom_ts,
+                ),
+                Metric(
+                    metric=f'{metric_name}{LOW32_METRICS_NAME_SUFFIX}{{hostname="{_hostname}",job="{_job}",device="{device}",side="{side}"}}',
+                    val=val & 0xFFFFFFFF,
+                    ts=prom_ts,
+                ),
+            ]
+        )
     for metric_name, field_spec, side in [
         ("proc_net_dev_packets_total", "rx_packets", "rx"),
         ("proc_net_dev_errors_total", "rx_errors", "rx"),
