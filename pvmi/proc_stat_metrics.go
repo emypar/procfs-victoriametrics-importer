@@ -42,10 +42,7 @@ const (
 
 	CPU_TOTAL_ID = -1
 
-	PROC_STAT_METRICS_UP_GROUP_NAME                       = "proc_stat_metrics"
-	PROC_STAT_METRICS_UP_INTERVAL_LABEL_NAME              = "interval"
-	PROC_STAT_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
-	PROC_STAT_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME   = "full_metrics_factor"
+	PROC_STAT_METRICS_GENERATOR_ID = "proc_stat_metrics"
 )
 
 var ProcStatMetricsLog = Log.WithField(
@@ -93,6 +90,8 @@ type ProcStatMetricsContext struct {
 	cpuMetricFmt   string
 	pcpuMetricFmt  string
 	gaugeMetricFmt string
+	// Internal metrics generator ID:
+	generatorId string
 	// The channel receiving the generated metrics:
 	wChan chan *bytes.Buffer
 	// The following are useful for testing, in lieu of mocks:
@@ -158,23 +157,24 @@ func NewProcStatMetricsContext(
 			`%%s{%s="%s",%s="%s"} %%d %%s`+"\n",
 			HOSTNAME_LABEL_NAME, hostname, JOB_LABEL_NAME, job,
 		),
-		wChan:     wChan,
-		hostname:  hostname,
-		job:       job,
-		clktckSec: clktckSec,
-		timeNow:   timeNow,
-		bufPool:   bufPool,
+		generatorId: PROC_STAT_METRICS_GENERATOR_ID,
+		wChan:       wChan,
+		hostname:    hostname,
+		job:         job,
+		clktckSec:   clktckSec,
+		timeNow:     timeNow,
+		bufPool:     bufPool,
 	}
 	return procStatMetricsCtx, nil
 }
 
-func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
+func (procStatMetricsCtx *ProcStatMetricsContext) GenerateMetrics() {
 	var (
 		err        error
 		pCpuFactor float64
 	)
-	procStatMetricsCtx := mGenCtx.(*ProcStatMetricsContext)
 
+	metricCount, byteCount := 0, 0
 	savedCrtIndex := procStatMetricsCtx.crtIndex
 	defer func() {
 		if err != nil {
@@ -216,28 +216,36 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_CREATED_METRIC_NAME, stat.ProcessCreated, promTs)
 		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_RUNNING_METRIC_NAME, stat.ProcessesRunning, promTs)
 		fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_BLOCKED_METRIC_NAME, stat.ProcessesBlocked, promTs)
+		metricCount += 7
 	} else {
 		// Deltas:
 		if stat.BootTime != prevStat.BootTime {
 			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_BOOT_TIME_METRIC_NAME, stat.BootTime, promTs)
+			metricCount += 1
 		}
 		if stat.IRQTotal != prevStat.IRQTotal {
 			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_IRQ_TOTAL_METRIC_NAME, stat.IRQTotal, promTs)
+			metricCount += 1
 		}
 		if stat.SoftIRQTotal != prevStat.SoftIRQTotal {
 			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_SOFTIRQ_TOTAL_METRIC_NAME, stat.SoftIRQTotal, promTs)
+			metricCount += 1
 		}
 		if stat.ContextSwitches != prevStat.ContextSwitches {
 			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_CONTEXT_SWITCHES_METRIC_NAME, stat.ContextSwitches, promTs)
+			metricCount += 1
 		}
 		if stat.ProcessCreated != prevStat.ProcessCreated {
 			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_CREATED_METRIC_NAME, stat.ProcessCreated, promTs)
+			metricCount += 1
 		}
 		if stat.ProcessesRunning != prevStat.ProcessesRunning {
 			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_RUNNING_METRIC_NAME, stat.ProcessesRunning, promTs)
+			metricCount += 1
 		}
 		if stat.ProcessesBlocked != prevStat.ProcessesBlocked {
 			fmt.Fprintf(buf, gaugeMetricFmt, PROC_STAT_PROCESS_BLOCKED_METRIC_NAME, stat.ProcessesBlocked, promTs)
+			metricCount += 1
 		}
 	}
 	if statsGroupNum += 1; statsGroupNum >= fullMetricsFactor {
@@ -295,6 +303,7 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 			fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_STEAL_VALUE, float64(cpuStat.Steal)*clktckSec, promTs)
 			fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUEST_VALUE, float64(cpuStat.Guest)*clktckSec, promTs)
 			fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUESTNICE_VALUE, float64(cpuStat.GuestNice)*clktckSec, promTs)
+			metricCount += 10
 
 			if crtPCpu != nil {
 				pCpu = float64(cpuStat.User-prevCpuStat.User) * pCpuFactor
@@ -336,97 +345,119 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 				pCpu = float64(cpuStat.GuestNice-prevCpuStat.GuestNice) * pCpuFactor
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUESTNICE_VALUE, pCpu, promTs)
 				crtPCpu.GuestNice = pCpu
+
+				metricCount += 10
 			}
 		} else {
 			// Delta:
 			if cpuStat.User != prevCpuStat.User {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_USER_VALUE, float64(cpuStat.User)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.Nice != prevCpuStat.Nice {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_NICE_VALUE, float64(cpuStat.Nice)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.System != prevCpuStat.System {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_SYSTEM_VALUE, float64(cpuStat.System)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.Idle != prevCpuStat.Idle {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IDLE_VALUE, float64(cpuStat.Idle)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.Iowait != prevCpuStat.Iowait {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IOWAIT_VALUE, float64(cpuStat.Iowait)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.IRQ != prevCpuStat.IRQ {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IRQ_VALUE, float64(cpuStat.IRQ)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.SoftIRQ != prevCpuStat.SoftIRQ {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_SOFTIRQ_VALUE, float64(cpuStat.SoftIRQ)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.Steal != prevCpuStat.Steal {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_STEAL_VALUE, float64(cpuStat.Steal)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.Guest != prevCpuStat.Guest {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUEST_VALUE, float64(cpuStat.Guest)*clktckSec, promTs)
+				metricCount += 1
 			}
 			if cpuStat.GuestNice != prevCpuStat.GuestNice {
 				fmt.Fprintf(buf, cpuMetricFmt, PROC_STAT_CPU_TIME_SECONDS_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUESTNICE_VALUE, float64(cpuStat.GuestNice)*clktckSec, promTs)
+				metricCount += 1
 			}
 
 			pCpu = float64(cpuStat.User-prevCpuStat.User) * pCpuFactor
 			if prevPCpu == nil || int(pCpu*100.) != int(prevPCpu.User*100.) {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_USER_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.User = pCpu
 
 			pCpu = float64(cpuStat.Nice-prevCpuStat.Nice) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.Nice {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_NICE_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.Nice = pCpu
 
 			pCpu = float64(cpuStat.System-prevCpuStat.System) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.System {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_SYSTEM_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.System = pCpu
 
 			pCpu = float64(cpuStat.Idle-prevCpuStat.Idle) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.Idle {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IDLE_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.Idle = pCpu
 
 			pCpu = float64(cpuStat.Iowait-prevCpuStat.Iowait) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.Iowait {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IOWAIT_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.Iowait = pCpu
 
 			pCpu = float64(cpuStat.IRQ-prevCpuStat.IRQ) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.IRQ {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_IRQ_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.IRQ = pCpu
 
 			pCpu = float64(cpuStat.SoftIRQ-prevCpuStat.SoftIRQ) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.SoftIRQ {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_SOFTIRQ_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.SoftIRQ = pCpu
 
 			pCpu = float64(cpuStat.Steal-prevCpuStat.Steal) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.Steal {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_STEAL_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.Steal = pCpu
 
 			pCpu = float64(cpuStat.Guest-prevCpuStat.Guest) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.Guest {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUEST_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.Guest = pCpu
 
 			pCpu = float64(cpuStat.GuestNice-prevCpuStat.GuestNice) * pCpuFactor
 			if prevPCpu == nil || pCpu != prevPCpu.GuestNice {
 				fmt.Fprintf(buf, pcpuMetricFmt, PROC_STAT_CPU_TIME_PCT_METRIC_NAME, cpu, PROC_STAT_CPU_METRIC_TYPE_LABEL_GUESTNICE_VALUE, pCpu, promTs)
+				metricCount += 1
 			}
 			crtPCpu.GuestNice = pCpu
 		}
@@ -442,12 +473,23 @@ func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
 	procStatMetricsCtx.Timestamp = timestamp
 	procStatMetricsCtx.refreshCycleNum = refreshCycleNum
 
-	if wChan != nil && buf.Len() > 0 {
+	if buf.Len() > 0 {
 		buf.WriteByte('\n')
+		byteCount += buf.Len()
+	}
+
+	if wChan != nil && buf.Len() > 0 {
 		wChan <- buf
 	} else {
 		bufPool.ReturnBuffer(buf)
 	}
+	// Report the internal metrics stats:
+	allMetricsGeneratorInfo.Report(procStatMetricsCtx.generatorId, metricCount, byteCount)
+}
+
+func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
+	procStatMetricsCtx := mGenCtx.(*ProcStatMetricsContext)
+	procStatMetricsCtx.GenerateMetrics()
 }
 
 var ProcStatMetricsScanIntervalArg = flag.Float64(
@@ -512,23 +554,27 @@ func StartProcStatMetricsFromArgs() error {
 	}
 	if procStatMetricsCtx == nil {
 		ProcStatMetricsLog.Warn("proc_stat metrics collection disabled")
-		metricsUp.Register(
-			PROC_STAT_METRICS_UP_GROUP_NAME,
+		allMetricsGeneratorInfo.Register(
+			PROC_STAT_METRICS_GENERATOR_ID,
 			0,
 		)
 		return nil
 	}
 
-	metricsUp.Register(
-		PROC_STAT_METRICS_UP_GROUP_NAME,
+	allMetricsGeneratorInfo.Register(
+		PROC_STAT_METRICS_GENERATOR_ID,
 		1,
-		fmt.Sprintf(`%s="%s"`, PROC_STAT_METRICS_UP_INTERVAL_LABEL_NAME, procStatMetricsCtx.interval),
+		fmt.Sprintf(`%s="%s"`, INTERNAL_METRICS_GENERATOR_CONFIG_INTERVAL_LABEL_NAME, procStatMetricsCtx.interval),
 		fmt.Sprintf(
 			`%s="%s"`,
-			PROC_STAT_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME,
+			INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_INTERVAL_LABEL_NAME,
 			time.Duration(*ProcStatMetricsFullMetricsIntervalArg*float64(time.Second)),
 		),
-		fmt.Sprintf(`%s="%d"`, PROC_STAT_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME, procStatMetricsCtx.fullMetricsFactor),
+		fmt.Sprintf(
+			`%s="%d"`,
+			INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_FACTOR_LABEL_NAME,
+			procStatMetricsCtx.fullMetricsFactor,
+		),
 	)
 
 	GlobalProcStatMetricsCtx = procStatMetricsCtx

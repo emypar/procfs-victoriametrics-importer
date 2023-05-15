@@ -25,7 +25,7 @@ func updateProcPidCmdlineMetric(
 	pmce *PidMetricsCacheEntry,
 	promTs string,
 	buf *bytes.Buffer,
-	generatedCount *uint64,
+	metricCount *int,
 ) error {
 	// Clear previous metric, if any:
 	if pmce.ProcPidCmdlineMetric != "" {
@@ -48,8 +48,8 @@ func updateProcPidCmdlineMetric(
 		pmce.CommonLabels,
 		SanitizeLabelValue(cmdline),
 	)
-	if generatedCount != nil {
-		*generatedCount += 1
+	if metricCount != nil {
+		*metricCount += 1
 	}
 	return nil
 }

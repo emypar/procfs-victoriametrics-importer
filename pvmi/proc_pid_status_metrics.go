@@ -86,13 +86,13 @@ func updateProcPidStatusInfoMetric(
 	pmce *PidMetricsCacheEntry,
 	promTs string,
 	buf *bytes.Buffer,
-	generatedCount *uint64,
+	metricCount *int,
 ) error {
 	// Clear previous metric, if any:
 	if pmce.ProcPidStatusInfoMetric != "" {
 		buf.WriteString(pmce.ProcPidStatusInfoMetric + " 0 " + promTs + "\n")
-		if generatedCount != nil {
-			*generatedCount += 1
+		if metricCount != nil {
+			*metricCount += 1
 		}
 	}
 	// Update the metric:

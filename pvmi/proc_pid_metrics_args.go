@@ -175,7 +175,7 @@ func StartPidMetricsFromArgs() error {
 	}
 	if pidMetricsContextList == nil {
 		PidMetricsLog.Warn("PID metrics collection disabled")
-		metricsUp.Register(PROC_PID_METRICS_UP_GROUP_NAME, 0)
+		allMetricsGeneratorInfo.Register(PROC_PID_METRICS_GENERATOR_ID_ROOT, 0)
 		return nil
 	}
 
@@ -186,18 +186,18 @@ func StartPidMetricsFromArgs() error {
 			pidMetricsCtx.interval,
 			pidMetricsCtx.pidListPart,
 		)
-		metricsUp.Register(
-			PROC_PID_METRICS_UP_GROUP_NAME,
+		allMetricsGeneratorInfo.Register(
+			pidMetricsCtx.generatorId,
 			1,
-			fmt.Sprintf(`%s="%s"`, PROC_PID_METRICS_UP_INTERVAL_LABEL_NAME, pidMetricsCtx.interval),
+			fmt.Sprintf(`%s="%s"`, INTERNAL_METRICS_GENERATOR_CONFIG_INTERVAL_LABEL_NAME, pidMetricsCtx.interval),
 			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_STATS_PID_LIST_PART_LABEL_NAME, pidMetricsCtx.pidListPart),
 			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_UP_NUM_GENERATORS_LABEL_NAME, len(pidMetricsContextList)),
 			fmt.Sprintf(
 				`%s="%s"`,
-				PROC_PID_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME,
+				INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_INTERVAL_LABEL_NAME,
 				time.Duration(*PidMetricsFullMetricsIntervalArg*float64(time.Second)),
 			),
-			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME, pidMetricsCtx.fullMetricsFactor),
+			fmt.Sprintf(`%s="%d"`, INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_FACTOR_LABEL_NAME, pidMetricsCtx.fullMetricsFactor),
 			fmt.Sprintf(`%s="%.02f%%"`, PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_PCT_LABEL_NAME, *PidMetricsActiveThresholdPctArg),
 			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_LABEL_NAME, pidMetricsCtx.activeThreshold),
 		)

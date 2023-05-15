@@ -45,15 +45,12 @@ const (
 	// The max length of the buffer used to read files like cmdline and cgroup:
 	PROC_PID_FILE_BUFFER_MAX_LENGTH = 0x10000
 
-	// Stats metrics:
-	PROC_PID_METRICS_UP_GROUP_NAME                       = "proc_pid_metrics"
-	PROC_PID_METRICS_UP_INTERVAL_LABEL_NAME              = "interval"
-	PROC_PID_METRICS_UP_TID_ENABLED_LABEL_NAME           = "tid_enabled"
-	PROC_PID_METRICS_UP_NUM_GENERATORS_LABEL_NAME        = "num_generators"
-	PROC_PID_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
-	PROC_PID_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME   = "full_metrics_factor"
-	PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_PCT_LABEL_NAME  = "active_threshold_pct"
-	PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_LABEL_NAME      = "active_threshold"
+	// Internal and stats and metrics:
+	PROC_PID_METRICS_GENERATOR_ID_ROOT                  = "proc_pid_metrics"
+	PROC_PID_METRICS_UP_TID_ENABLED_LABEL_NAME          = "tid_enabled"
+	PROC_PID_METRICS_UP_NUM_GENERATORS_LABEL_NAME       = "num_generators"
+	PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_PCT_LABEL_NAME = "active_threshold_pct"
+	PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_LABEL_NAME     = "active_threshold"
 
 	PROC_PID_METRICS_STATS_PID_COUNT_METRICS_NAME          = "proc_pid_metrics_stats_pid_count"
 	PROC_PID_METRICS_STATS_TID_COUNT_METRICS_NAME          = "proc_pid_metrics_stats_tid_count"
@@ -97,16 +94,16 @@ var tidMetricCommonLabelsFmt = pidMetricCommonLabelsFmt + "," + fmt.Sprintf(
 )
 
 type PidMetricsStats struct {
-	PidCount         uint64
-	TidCount         uint64
-	ActiveCount      uint64
-	FullMetricsCount uint64
-	CreatedCount     uint64
-	DeletedCount     uint64
-	ErrorCount       uint64
-	GeneratedCount   uint64
-	PmcCount         uint64
-	BytesCount       uint64
+	PidCount         int
+	TidCount         int
+	ActiveCount      int
+	FullMetricsCount int
+	CreatedCount     int
+	DeletedCount     int
+	ErrorCount       int
+	MetricCount      int
+	CacheCount       int
+	ByteCount        int
 }
 
 // The context for pid metrics generation:
@@ -147,6 +144,8 @@ type PidMetricsContext struct {
 	// is read, compare against cached (previous) and discard because no change.
 	// That makes the buffer reusable across processes/threads.
 	fileBuf []byte
+	// Internal metrics generator ID:
+	generatorId string
 	// The following are useful for testing (mocks, special behavior):
 	enableStatsMetrics bool
 	hostname           string
@@ -213,6 +212,7 @@ func NewPidMetricsContext(
 		passNum:            0,
 		wChan:              wChan,
 		fileBuf:            make([]byte, PROC_PID_FILE_BUFFER_MAX_LENGTH),
+		generatorId:        fmt.Sprintf(`%s#%d`, PROC_PID_METRICS_GENERATOR_ID_ROOT, pidListPart),
 		enableStatsMetrics: enableStatsMetrics,
 		hostname:           hostname,
 		job:                job,
@@ -357,7 +357,7 @@ func GeneratePidMetrics(
 		procIo, prevProcIo         *procfs.ProcIO
 		savedCrtProcIoIndex        int
 		err                        error
-		generatedCount             uint64
+		metricCount                int
 		deltaUTime, deltaSTime     uint
 	)
 
@@ -407,7 +407,7 @@ func GeneratePidMetrics(
 				if !exists {
 					pmStats.CreatedCount += 1
 				}
-				pmStats.GeneratedCount += generatedCount
+				pmStats.MetricCount += metricCount
 			} else {
 				pmStats.ErrorCount += 1
 			}
@@ -476,7 +476,7 @@ func GeneratePidMetrics(
 			pmce,
 			strconv.FormatInt(pidMetricsCtx.timeNow().UnixMilli(), 10),
 			buf,
-			&generatedCount,
+			&metricCount,
 		)
 		// Readjust the buffer recovery mark to accommodate the above:
 		bufInitLen = buf.Len()
@@ -601,19 +601,19 @@ func GeneratePidMetrics(
 			pmce,
 			promTs,
 			buf,
-			&generatedCount,
+			&metricCount,
 		)
 		if err != nil {
 			return err
 		}
-		updateProcPidCmdlineMetric(pmce, promTs, buf, &generatedCount)
-		updateProcPidStatStateMetric(pmce, promTs, buf, &generatedCount)
-		updateProcPidStatInfoMetric(pmce, promTs, buf, &generatedCount)
-		updateProcPidStatusInfoMetric(pmce, promTs, buf, &generatedCount)
+		updateProcPidCmdlineMetric(pmce, promTs, buf, &metricCount)
+		updateProcPidStatStateMetric(pmce, promTs, buf, &metricCount)
+		updateProcPidStatInfoMetric(pmce, promTs, buf, &metricCount)
+		updateProcPidStatusInfoMetric(pmce, promTs, buf, &metricCount)
 	} else {
 		// Check for changes in pseudo-categorical metrics:
 		if prevProcStat.State != procStat.State {
-			updateProcPidStatStateMetric(pmce, promTs, buf, &generatedCount)
+			updateProcPidStatStateMetric(pmce, promTs, buf, &metricCount)
 			statStateChanged = true
 		}
 		if prevProcStat.Comm != procStat.Comm ||
@@ -627,7 +627,7 @@ func GeneratePidMetrics(
 			prevProcStat.Nice != procStat.Nice ||
 			prevProcStat.RTPriority != procStat.RTPriority ||
 			prevProcStat.Policy != procStat.Policy {
-			updateProcPidStatInfoMetric(pmce, promTs, buf, &generatedCount)
+			updateProcPidStatInfoMetric(pmce, promTs, buf, &metricCount)
 			statInfoChanged = true
 		}
 
@@ -636,7 +636,7 @@ func GeneratePidMetrics(
 				prevProcStatus.TGID != procStatus.TGID ||
 				prevProcStatus.UIDs != procStatus.UIDs ||
 				prevProcStatus.GIDs != procStatus.GIDs {
-				updateProcPidStatusInfoMetric(pmce, promTs, buf, &generatedCount)
+				updateProcPidStatusInfoMetric(pmce, promTs, buf, &metricCount)
 				statusInfoChanged = true
 			}
 		}
@@ -646,14 +646,14 @@ func GeneratePidMetrics(
 				pmce,
 				promTs,
 				buf,
-				&generatedCount,
+				&metricCount,
 			)
 			if err != nil {
 				return err
 			}
 		}
 		if cmdlineChanged {
-			updateProcPidCmdlineMetric(pmce, promTs, buf, &generatedCount)
+			updateProcPidCmdlineMetric(pmce, promTs, buf, &metricCount)
 		}
 	}
 
@@ -665,32 +665,32 @@ func GeneratePidMetrics(
 		for metric, _ := range pmce.ProcPidCgroupMetrics {
 			buf.WriteString(metric)
 			buf.Write(setSuffix)
-			generatedCount += 1
+			metricCount += 1
 		}
 	}
 
 	if fullMetrics || cmdlineChanged {
 		buf.WriteString(pmce.ProcPidCmdlineMetric)
 		buf.Write(setSuffix)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	if fullMetrics || statStateChanged {
 		buf.WriteString(pmce.ProcPidStatStateMetric)
 		buf.Write(setSuffix)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	if fullMetrics || statInfoChanged {
 		buf.WriteString(pmce.ProcPidStatInfoMetric)
 		buf.Write(setSuffix)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	if fullMetrics || statusInfoChanged {
 		buf.WriteString(pmce.ProcPidStatusInfoMetric)
 		buf.Write(setSuffix)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// Update numerical metrics:
@@ -706,7 +706,7 @@ func GeneratePidMetrics(
 			procStat.MinFlt,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_cminflt:
@@ -719,7 +719,7 @@ func GeneratePidMetrics(
 			procStat.CMinFlt,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_majflt:
@@ -732,7 +732,7 @@ func GeneratePidMetrics(
 			procStat.MajFlt,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_cmajflt:
@@ -745,7 +745,7 @@ func GeneratePidMetrics(
 			procStat.CMajFlt,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_utime_seconds:
@@ -758,7 +758,7 @@ func GeneratePidMetrics(
 			float64(procStat.UTime)*pidMetricsCtx.clktckSec,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_stime_seconds:
@@ -771,7 +771,7 @@ func GeneratePidMetrics(
 			float64(procStat.STime)*pidMetricsCtx.clktckSec,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_cutime_seconds:
@@ -784,7 +784,7 @@ func GeneratePidMetrics(
 			float64(procStat.CUTime)*pidMetricsCtx.clktckSec,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_cstime_seconds:
@@ -797,7 +797,7 @@ func GeneratePidMetrics(
 			float64(procStat.CSTime)*pidMetricsCtx.clktckSec,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_vsize:
@@ -810,7 +810,7 @@ func GeneratePidMetrics(
 			procStat.VSize,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_rss:
@@ -823,7 +823,7 @@ func GeneratePidMetrics(
 			procStat.RSS,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_rsslim:
@@ -836,7 +836,7 @@ func GeneratePidMetrics(
 			procStat.RSSLimit,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_cpu:
@@ -849,7 +849,7 @@ func GeneratePidMetrics(
 			procStat.Processor,
 			promTs,
 		)
-		generatedCount += 1
+		metricCount += 1
 	}
 
 	// proc_pid_stat_*time_pct:
@@ -876,7 +876,7 @@ func GeneratePidMetrics(
 				UTimePct+STimePct,
 				promTs,
 			)
-			generatedCount += 3
+			metricCount += 3
 			pmce.PrevUTimePct, pmce.PrevSTimePct = UTimePct, STimePct
 		}
 	}
@@ -893,7 +893,7 @@ func GeneratePidMetrics(
 					procStatus.VmPeak,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_size:
@@ -906,7 +906,7 @@ func GeneratePidMetrics(
 					procStatus.VmSize,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_lck:
@@ -919,7 +919,7 @@ func GeneratePidMetrics(
 					procStatus.VmLck,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_pin:
@@ -932,7 +932,7 @@ func GeneratePidMetrics(
 					procStatus.VmPin,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_hwm:
@@ -945,7 +945,7 @@ func GeneratePidMetrics(
 					procStatus.VmHWM,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_rss:
@@ -958,7 +958,7 @@ func GeneratePidMetrics(
 					procStatus.VmRSS,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_rss_anon:
@@ -971,7 +971,7 @@ func GeneratePidMetrics(
 					procStatus.RssAnon,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_rss_file:
@@ -984,7 +984,7 @@ func GeneratePidMetrics(
 					procStatus.RssFile,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_rss_shmem:
@@ -997,7 +997,7 @@ func GeneratePidMetrics(
 					procStatus.RssShmem,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_data:
@@ -1010,7 +1010,7 @@ func GeneratePidMetrics(
 					procStatus.VmData,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_stk:
@@ -1023,7 +1023,7 @@ func GeneratePidMetrics(
 					procStatus.VmStk,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_exe:
@@ -1036,7 +1036,7 @@ func GeneratePidMetrics(
 					procStatus.VmExe,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_lib:
@@ -1049,7 +1049,7 @@ func GeneratePidMetrics(
 					procStatus.VmLib,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_pte:
@@ -1062,7 +1062,7 @@ func GeneratePidMetrics(
 					procStatus.VmPTE,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_pmd:
@@ -1075,7 +1075,7 @@ func GeneratePidMetrics(
 					procStatus.VmPMD,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_vm_swap:
@@ -1088,7 +1088,7 @@ func GeneratePidMetrics(
 					procStatus.VmSwap,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 			// proc_pid_status_hugetbl_pages:
@@ -1101,7 +1101,7 @@ func GeneratePidMetrics(
 					procStatus.HugetlbPages,
 					promTs,
 				)
-				generatedCount += 1
+				metricCount += 1
 			}
 
 		}
@@ -1116,7 +1116,7 @@ func GeneratePidMetrics(
 				procStatus.VoluntaryCtxtSwitches,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 
 		// proc_pid_status_nonvoluntary_ctxt_switches:
@@ -1129,7 +1129,7 @@ func GeneratePidMetrics(
 				procStatus.NonVoluntaryCtxtSwitches,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 
 		// proc_pid_io_rcar:
@@ -1142,7 +1142,7 @@ func GeneratePidMetrics(
 				procIo.RChar,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 
 		// proc_pid_io_wcar:
@@ -1155,7 +1155,7 @@ func GeneratePidMetrics(
 				procIo.WChar,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 
 		// proc_pid_io_syscr:
@@ -1168,7 +1168,7 @@ func GeneratePidMetrics(
 				procIo.SyscR,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 
 		// proc_pid_io_syscw:
@@ -1181,7 +1181,7 @@ func GeneratePidMetrics(
 				procIo.SyscW,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 
 		// proc_pid_io_readbytes:
@@ -1194,7 +1194,7 @@ func GeneratePidMetrics(
 				procIo.ReadBytes,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 
 		// proc_pid_io_writebytes:
@@ -1207,7 +1207,7 @@ func GeneratePidMetrics(
 				procIo.WriteBytes,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 
 		// proc_pid_io_cancelled_writebytes:
@@ -1220,11 +1220,11 @@ func GeneratePidMetrics(
 				procIo.CancelledWriteBytes,
 				promTs,
 			)
-			generatedCount += 1
+			metricCount += 1
 		}
 	}
 
-	if generatedCount > 0 {
+	if metricCount > 0 {
 		buf.WriteByte('\n')
 	}
 
@@ -1240,44 +1240,43 @@ func clearProcPidMetrics(
 	pmce *PidMetricsCacheEntry,
 	promTs string,
 	buf *bytes.Buffer,
-	generatedCount *uint64,
+	metricCount *int,
 ) error {
-	gCnt := uint64(0)
+	metricClearCount := 0
 	clearSuffix := []byte(" 0 " + promTs + "\n")
 	for metric, _ := range pmce.ProcPidCgroupMetrics {
 		buf.WriteString(metric)
 		buf.Write(clearSuffix)
-		gCnt += 1
+		metricClearCount += 1
 	}
 	if pmce.ProcPidCmdlineMetric != "" {
 		buf.WriteString(pmce.ProcPidCmdlineMetric)
 		buf.Write(clearSuffix)
-		gCnt += 1
+		metricClearCount += 1
 	}
 	if pmce.ProcPidStatStateMetric != "" {
 		buf.WriteString(pmce.ProcPidStatStateMetric)
 		buf.Write(clearSuffix)
-		gCnt += 1
+		metricClearCount += 1
 	}
 	if pmce.ProcPidStatInfoMetric != "" {
 		buf.WriteString(pmce.ProcPidStatInfoMetric)
 		buf.Write(clearSuffix)
-		gCnt += 1
+		metricClearCount += 1
 	}
 	if pmce.ProcPidStatusInfoMetric != "" {
 		buf.WriteString(pmce.ProcPidStatusInfoMetric)
 		buf.Write(clearSuffix)
-		gCnt += 1
+		metricClearCount += 1
 	}
-	if generatedCount != nil {
-		*generatedCount += gCnt
+	if metricCount != nil {
+		*metricCount += metricClearCount
 	}
 	return nil
 }
 
 // One pass for all PID[,TIDs] assigned to this scanner:
-func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
-	pidMetricsCtx := mGenCtx.(*PidMetricsContext)
+func (pidMetricsCtx *PidMetricsContext) GenerateMetrics() {
 	// Pass timestamp:
 	timestamp := pidMetricsCtx.timeNow().UnixMilli()
 
@@ -1292,14 +1291,14 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 	pidMetricsCtx.ClearPidStarttimeCache()
 	pidMetricsCtx.ClearStats()
 	buf := bufPool.GetBuffer()
-	bytesCount := 0
+	byteCount := 0
 	for _, pidTid := range pidList {
 		err := GeneratePidMetrics(pidTid, pidMetricsCtx, buf)
 		if err != nil {
 			PidMetricsLog.Warnf("GeneratePidMetrics(%v): %s", pidTid, err)
 		}
 		if buf.Len() >= BUF_MAX_SIZE {
-			bytesCount += buf.Len()
+			byteCount += buf.Len()
 			if wChan != nil {
 				wChan <- buf
 			} else {
@@ -1311,15 +1310,15 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 
 	// Clear expired PIDs:
 	promTs := strconv.FormatInt(timestamp, 10)
-	dCnt, pmcCnt := uint64(0), uint64(0)
+	deletedCount, cacheCount := 0, 0
 	pmc := pidMetricsCtx.pmc
 	for pidTid, pmce := range pmc {
 		if pmce.PassNum != passNum {
-			clearProcPidMetrics(pmce, promTs, buf, &pidMetricsCtx.pmStats.GeneratedCount)
+			clearProcPidMetrics(pmce, promTs, buf, &pidMetricsCtx.pmStats.MetricCount)
 			delete(pmc, pidTid)
-			dCnt += 1
+			deletedCount += 1
 			if buf.Len() >= BUF_MAX_SIZE {
-				bytesCount += buf.Len()
+				byteCount += buf.Len()
 				if wChan != nil {
 					wChan <- buf
 				} else {
@@ -1328,14 +1327,14 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 				buf = bufPool.GetBuffer()
 			}
 		} else {
-			pmcCnt += 1
+			cacheCount += 1
 		}
 	}
-	if dCnt > 0 {
+	if deletedCount > 0 {
 		buf.WriteByte('\n')
 	}
 	// Flush the last buffer:
-	bytesCount += buf.Len()
+	byteCount += buf.Len()
 	if buf.Len() > 0 && wChan != nil {
 		wChan <- buf
 	} else {
@@ -1343,11 +1342,12 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 	}
 
 	// Update stats:
-	pidMetricsCtx.pmStats.DeletedCount += dCnt
-	pidMetricsCtx.pmStats.PmcCount = pmcCnt
-	pidMetricsCtx.pmStats.BytesCount = uint64(bytesCount)
+	pidMetricsCtx.pmStats.DeletedCount += deletedCount
+	pidMetricsCtx.pmStats.CacheCount = cacheCount
+	pidMetricsCtx.pmStats.ByteCount = byteCount
 
 	// Publish stats:
+	metricCount := pidMetricsCtx.pmStats.MetricCount
 	if pidMetricsCtx.enableStatsMetrics && wChan != nil {
 		buf = bufPool.GetBuffer()
 		pmStats := pidMetricsCtx.pmStats
@@ -1371,11 +1371,21 @@ func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
 			PROC_PID_METRICS_STATS_CREATED_COUNT_METRICS_NAME, statsLabels, pmStats.CreatedCount, promTs,
 			PROC_PID_METRICS_STATS_DELETED_COUNT_METRICS_NAME, statsLabels, pmStats.DeletedCount, promTs,
 			PROC_PID_METRICS_STATS_ERROR_COUNT_METRICS_NAME, statsLabels, pmStats.ErrorCount, promTs,
-			PROC_PID_METRICS_STATS_GENERATED_COUNT_METRICS_NAME, statsLabels, pmStats.GeneratedCount, promTs,
-			PROC_PID_METRICS_STATS_CACHE_COUNT_METRICS_NAME, statsLabels, pmStats.PmcCount, promTs,
-			PROC_PID_METRICS_STATS_BYTES_COUNT_METRICS_NAME, statsLabels, pmStats.BytesCount, promTs,
+			PROC_PID_METRICS_STATS_GENERATED_COUNT_METRICS_NAME, statsLabels, pmStats.MetricCount, promTs,
+			PROC_PID_METRICS_STATS_CACHE_COUNT_METRICS_NAME, statsLabels, pmStats.CacheCount, promTs,
+			PROC_PID_METRICS_STATS_BYTES_COUNT_METRICS_NAME, statsLabels, pmStats.ByteCount, promTs,
 		)
+		metricCount += 10
 		buf.WriteByte('\n')
 		wChan <- buf
+		byteCount += buf.Len()
 	}
+
+	// Report the internal metrics stats:
+	allMetricsGeneratorInfo.Report(pidMetricsCtx.generatorId, metricCount, byteCount)
+}
+
+func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
+	pidMetricsCtx := mGenCtx.(*PidMetricsContext)
+	pidMetricsCtx.GenerateMetrics()
 }

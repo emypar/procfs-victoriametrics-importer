@@ -25,10 +25,7 @@ const (
 	DEFAULT_PROC_INTERRUPTS_METRICS_FULL_METRICS_INTERVAL = 15 // seconds
 
 	// Stats metrics:
-	PROC_INTERRUPTS_METRICS_UP_GROUP_NAME                       = "proc_interrupts_metrics"
-	PROC_INTERRUPTS_METRICS_UP_INTERVAL_LABEL_NAME              = "interval"
-	PROC_INTERRUPTS_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
-	PROC_INTERRUPTS_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME   = "full_metrics_factor"
+	PROC_INTERRUPTS_METRICS_GENERATOR_ID = "proc_interrupts_metrics"
 )
 
 var ProcInterruptsMetricsLog = Log.WithField(
@@ -61,6 +58,8 @@ type ProcInterruptsMetricsContext struct {
 	// Precomputed formats for generating the metrics:
 	counterMetricFmt string
 	infoMetricFmt    string
+	// Internal metrics generator ID:
+	generatorId string
 	// The channel receiving the generated metrics:
 	wChan chan *bytes.Buffer
 	// The following are useful for testing, in lieu of mocks:
@@ -129,17 +128,18 @@ func NewProcInterruptsMetricsContext(
 			PROC_INTERRUPTS_INFO_DEVICES_LABEL_NAME,
 			PROC_INTERRUPTS_INFO_INFO_LABEL_NAME,
 		),
-		wChan:    wChan,
-		hostname: hostname,
-		job:      job,
-		timeNow:  timeNow,
-		bufPool:  bufPool,
+		generatorId: PROC_INTERRUPTS_METRICS_GENERATOR_ID,
+		wChan:       wChan,
+		hostname:    hostname,
+		job:         job,
+		timeNow:     timeNow,
+		bufPool:     bufPool,
 	}
 	return procInterruptsMetricsCtx, nil
 }
 
-func GenerateProcInterruptsMetrics(mGenCtx MetricsGenContext) {
-	procInterruptsMetricsCtx := mGenCtx.(*ProcInterruptsMetricsContext)
+func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() {
+	metricCount, byteCount := 0, 0
 	interrupts, err := procInterruptsMetricsCtx.fs.Interrupts()
 	if err != nil {
 		ProcInterruptsMetricsLog.Warn(err)
@@ -176,14 +176,17 @@ func GenerateProcInterruptsMetrics(mGenCtx MetricsGenContext) {
 		// Handle pseudo-categorical info 1st:
 		if exists && (prevInterrupt.Devices != interrupt.Devices || prevInterrupt.Info != interrupt.Info) {
 			fmt.Fprintf(buf, infoMetricFmt, irq, prevInterrupt.Devices, prevInterrupt.Info, 0, promTs)
+			metricCount += 1
 		}
 		if fullMetrics {
 			fmt.Fprintf(buf, infoMetricFmt, irq, interrupt.Devices, interrupt.Info, 1, promTs)
+			metricCount += 1
 		}
 		// Values:
 		for cpu, value := range interrupt.Values {
 			if fullMetrics || prevInterrupt.Values[cpu] != value {
 				fmt.Fprintf(buf, counterMetricFmt, irq, cpu, value, promTs)
+				metricCount += 1
 			}
 		}
 		// Remove the IRQ from previous stats, such that at the end what's left
@@ -197,11 +200,14 @@ func GenerateProcInterruptsMetrics(mGenCtx MetricsGenContext) {
 	if len(prevInterrupts) > 0 {
 		for irq, prevInterrupt := range prevInterrupts {
 			fmt.Fprintf(buf, infoMetricFmt, irq, prevInterrupt.Devices, prevInterrupt.Info, 0, promTs)
+			metricCount += 1
 		}
 	}
-
-	if buf.Len() > 0 && wChan != nil {
+	if buf.Len() > 0 {
 		buf.WriteByte('\n')
+		byteCount += buf.Len()
+	}
+	if buf.Len() > 0 && wChan != nil {
 		wChan <- buf
 	} else {
 		bufPool.ReturnBuffer(buf)
@@ -246,6 +252,14 @@ func GenerateProcInterruptsMetrics(mGenCtx MetricsGenContext) {
 		// Finally update the prev scan info:
 		procInterruptsMetricsCtx.prevInterrupts = interrupts
 	}
+
+	// Report the internal metrics stats:
+	allMetricsGeneratorInfo.Report(procInterruptsMetricsCtx.generatorId, metricCount, byteCount)
+}
+
+func GenerateProcInterruptsMetrics(mGenCtx MetricsGenContext) {
+	procInterruptsMetricsCtx := mGenCtx.(*ProcInterruptsMetricsContext)
+	procInterruptsMetricsCtx.GenerateMetrics()
 }
 
 var ProcInterruptsMetricsScanIntervalArg = flag.Float64(
@@ -308,25 +322,22 @@ func StartProcInterruptsMetricsFromArgs() error {
 	}
 	if procInterruptsMetricsCtx == nil {
 		ProcInterruptsMetricsLog.Warn("proc_interrupts metrics collection disabled")
-		metricsUp.Register(
-			PROC_INTERRUPTS_METRICS_UP_GROUP_NAME,
-			0,
-		)
+		allMetricsGeneratorInfo.Register(PROC_INTERRUPTS_METRICS_GENERATOR_ID, 0)
 		return nil
 	}
 
-	metricsUp.Register(
-		PROC_INTERRUPTS_METRICS_UP_GROUP_NAME,
+	allMetricsGeneratorInfo.Register(
+		PROC_INTERRUPTS_METRICS_GENERATOR_ID,
 		1,
-		fmt.Sprintf(`%s="%s"`, PROC_INTERRUPTS_METRICS_UP_INTERVAL_LABEL_NAME, procInterruptsMetricsCtx.interval),
+		fmt.Sprintf(`%s="%s"`, INTERNAL_METRICS_GENERATOR_CONFIG_INTERVAL_LABEL_NAME, procInterruptsMetricsCtx.interval),
 		fmt.Sprintf(
 			`%s="%s"`,
-			PROC_INTERRUPTS_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME,
+			INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_INTERVAL_LABEL_NAME,
 			time.Duration(*ProcInterruptsMetricsFullMetricsIntervalArg*float64(time.Second)),
 		),
 		fmt.Sprintf(
 			`%s="%d"`,
-			PROC_INTERRUPTS_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME,
+			INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_FACTOR_LABEL_NAME,
 			procInterruptsMetricsCtx.fullMetricsFactor,
 		),
 	)

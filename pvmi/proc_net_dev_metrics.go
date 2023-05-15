@@ -36,10 +36,7 @@ const (
 	DEFAULT_PROC_NET_DEV_METRICS_FULL_METRICS_INTERVAL = 15 // seconds
 
 	// Stats metrics:
-	PROC_NET_DEV_METRICS_UP_GROUP_NAME                       = "proc_net_dev_metrics"
-	PROC_NET_DEV_METRICS_UP_INTERVAL_LABEL_NAME              = "interval"
-	PROC_NET_DEV_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
-	PROC_NET_DEV_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME   = "full_metrics_factor"
+	PROC_NET_DEV_METRICS_GENERATOR_ID = "proc_net_dev_metrics"
 )
 
 var ProcNetDevMetricsLog = Log.WithField(
@@ -77,6 +74,8 @@ type ProcNetDevMetricsContext struct {
 	prevTs time.Time
 	// Precomputed format for generating the metrics:
 	counterMetricFmt string
+	// Internal metrics generator ID:
+	generatorId string
 	// The channel receiving the generated metrics:
 	wChan chan *bytes.Buffer
 	// The following are useful for testing, in lieu of mocks:
@@ -132,19 +131,21 @@ func NewProcNetDevMetricsContext(
 			`%%s{%s="%s",%s="%s",%s="%%s",%s="%%s"} %%d %%s`+"\n",
 			HOSTNAME_LABEL_NAME, hostname, JOB_LABEL_NAME, job, PROC_NET_DEV_DEVICE_LABEL_NAME, PROC_NET_DEV_SIDE_LABEL_NAME,
 		),
-		prevRxBps: make(NetDevBps),
-		prevTxBps: make(NetDevBps),
-		wChan:     wChan,
-		hostname:  hostname,
-		job:       job,
-		timeNow:   timeNow,
-		bufPool:   bufPool,
+		generatorId: PROC_NET_DEV_METRICS_GENERATOR_ID,
+		prevRxBps:   make(NetDevBps),
+		prevTxBps:   make(NetDevBps),
+		wChan:       wChan,
+		hostname:    hostname,
+		job:         job,
+		timeNow:     timeNow,
+		bufPool:     bufPool,
 	}
 	return procNetDevMetricsCtx, nil
 }
 
-func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
-	procNetDevMetricsCtx := mGenCtx.(*ProcNetDevMetricsContext)
+func (procNetDevMetricsCtx *ProcNetDevMetricsContext) GenerateMetrics() {
+	metricCount, byteCount := 0, 0
+
 	netDev, err := procNetDevMetricsCtx.fs.NetDev()
 	if err != nil {
 		ProcNetDevMetricsLog.Warn(err)
@@ -191,6 +192,7 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 					bps,
 					promTs,
 				)
+				metricCount += 1
 			}
 			prevRxBps[device] = bps
 
@@ -206,6 +208,7 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 					bps,
 					promTs,
 				)
+				metricCount += 1
 			}
 			prevTxBps[device] = bps
 		}
@@ -215,6 +218,7 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 				PROC_NET_DEV_BYTES_HIGH32_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxBytes>>32, promTs,
 				PROC_NET_DEV_BYTES_LOW32_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxBytes&0xffffffff, promTs,
 			)
+			metricCount += 2
 		}
 		if fullMetrics || prevNetDevLine.TxBytes != netDevLine.TxBytes {
 			fmt.Fprintf(
@@ -222,52 +226,70 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 				PROC_NET_DEV_BYTES_HIGH32_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxBytes>>32, promTs,
 				PROC_NET_DEV_BYTES_LOW32_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxBytes&0xffffffff, promTs,
 			)
+			metricCount += 2
 		}
 		if fullMetrics || prevNetDevLine.RxPackets != netDevLine.RxPackets {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxPackets, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.RxErrors != netDevLine.RxErrors {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_ERRORS_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxErrors, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.RxDropped != netDevLine.RxDropped {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_DROPPED_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxDropped, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.RxFIFO != netDevLine.RxFIFO {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_FIFO_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxFIFO, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.RxFrame != netDevLine.RxFrame {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_FRAME_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxFrame, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.RxCompressed != netDevLine.RxCompressed {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_COMPRESSED_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxCompressed, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.RxMulticast != netDevLine.RxMulticast {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_MULTICAST_METRIC_NAME, device, PROC_NET_DEV_SIDE_RX_LABEL_VALUE, netDevLine.RxMulticast, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.TxPackets != netDevLine.TxPackets {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_PACKETS_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxPackets, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.TxErrors != netDevLine.TxErrors {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_ERRORS_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxErrors, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.TxDropped != netDevLine.TxDropped {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_DROPPED_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxDropped, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.TxFIFO != netDevLine.TxFIFO {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_FIFO_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxFIFO, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.TxCollisions != netDevLine.TxCollisions {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_COLLISIONS_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxCollisions, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.TxCarrier != netDevLine.TxCarrier {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_CARRIER_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxCarrier, promTs)
+			metricCount += 1
 		}
 		if fullMetrics || prevNetDevLine.TxCompressed != netDevLine.TxCompressed {
 			fmt.Fprintf(buf, counterMetricFmt, PROC_NET_DEV_COMPRESSED_METRIC_NAME, device, PROC_NET_DEV_SIDE_TX_LABEL_VALUE, netDevLine.TxCompressed, promTs)
+			metricCount += 1
 		}
 	}
-	if buf.Len() > 0 && wChan != nil {
+	if buf.Len() > 0 {
 		buf.WriteByte('\n')
+		byteCount += buf.Len()
+	}
+	if buf.Len() > 0 && wChan != nil {
 		wChan <- buf
 	} else {
 		bufPool.ReturnBuffer(buf)
@@ -322,9 +344,17 @@ func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
 		procNetDevMetricsCtx.refreshCycleNum = refreshCycleNum
 	}
 
-	// Finally update the prev scan info:
+	// Update the prev scan info:
 	procNetDevMetricsCtx.prevNetDev = netDev
 	procNetDevMetricsCtx.prevTs = statsTs
+
+	// Report the internal metrics stats:
+	allMetricsGeneratorInfo.Report(procNetDevMetricsCtx.generatorId, metricCount, byteCount)
+}
+
+func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
+	procNetDevMetricsCtx := mGenCtx.(*ProcNetDevMetricsContext)
+	procNetDevMetricsCtx.GenerateMetrics()
 }
 
 var ProcNetDevMetricsScanIntervalArg = flag.Float64(
@@ -387,25 +417,21 @@ func StartProcNetDevMetricsFromArgs() error {
 	}
 	if procNetDevMetricsCtx == nil {
 		ProcNetDevMetricsLog.Warn("proc_net_dev metrics collection disabled")
-		metricsUp.Register(
-			PROC_NET_DEV_METRICS_UP_GROUP_NAME,
-			0,
-		)
+		allMetricsGeneratorInfo.Register(PROC_NET_DEV_METRICS_GENERATOR_ID, 0)
 		return nil
 	}
-
-	metricsUp.Register(
-		PROC_NET_DEV_METRICS_UP_GROUP_NAME,
+	allMetricsGeneratorInfo.Register(
+		procNetDevMetricsCtx.generatorId,
 		1,
-		fmt.Sprintf(`%s="%s"`, PROC_NET_DEV_METRICS_UP_INTERVAL_LABEL_NAME, procNetDevMetricsCtx.interval),
+		fmt.Sprintf(`%s="%s"`, INTERNAL_METRICS_GENERATOR_CONFIG_INTERVAL_LABEL_NAME, procNetDevMetricsCtx.interval),
 		fmt.Sprintf(
 			`%s="%s"`,
-			PROC_NET_DEV_METRICS_UP_FULL_METRICS_INTERVAL_LABEL_NAME,
+			INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_INTERVAL_LABEL_NAME,
 			time.Duration(*ProcNetDevMetricsFullMetricsIntervalArg*float64(time.Second)),
 		),
 		fmt.Sprintf(
 			`%s="%d"`,
-			PROC_NET_DEV_METRICS_UP_FULL_METRICS_FACTOR_LABEL_NAME,
+			INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_FACTOR_LABEL_NAME,
 			procNetDevMetricsCtx.fullMetricsFactor,
 		),
 	)

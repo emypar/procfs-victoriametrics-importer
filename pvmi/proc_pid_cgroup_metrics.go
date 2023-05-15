@@ -29,7 +29,7 @@ func updateProcPidCgroupMetric(
 	pmce *PidMetricsCacheEntry,
 	promTs string,
 	buf *bytes.Buffer,
-	generatedCount *uint64,
+	metricCount *int,
 ) error {
 	cgroups, err := procfs.ParseCgroups(pmce.RawCgroup)
 	if err != nil {
@@ -56,14 +56,14 @@ func updateProcPidCgroupMetric(
 		}
 	}
 	clearSuffix := []byte(" 0 " + promTs + "\n")
-	gCnt := uint64(0)
+	clearMetricCount := 0
 	for metric, _ := range outOfScopeProcPidCgroupMetrics {
 		buf.WriteString(metric)
 		buf.Write(clearSuffix)
-		gCnt += 1
+		clearMetricCount += 1
 	}
-	if generatedCount != nil {
-		*generatedCount += gCnt
+	if metricCount != nil {
+		*metricCount += clearMetricCount
 	}
 	return nil
 }
