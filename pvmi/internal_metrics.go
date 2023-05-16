@@ -63,6 +63,7 @@ const (
 	INTERNAL_METRICS_GENERATOR_UP_METRIC_NAME                          = "pvmi_up"
 	INTERNAL_METRICS_GENERATOR_METRIC_COUNT_METRIC_NAME                = "pvmi_metric_count"
 	INTERNAL_METRICS_GENERATOR_BYTE_COUNT_METRIC_NAME                  = "pvmi_byte_count"
+	INTERNAL_METRICS_GENERATOR_SKIPPED_COUNT_METRIC_NAME               = "pvmi_skipped_count"
 	INTERNAL_METRICS_GENERATOR_ID_LABEL_NAME                           = "generator"
 	INTERNAL_METRICS_GENERATOR_CONFIG_INTERVAL_LABEL_NAME              = "interval"
 	INTERNAL_METRICS_GENERATOR_CONFIG_FULL_METRICS_INTERVAL_LABEL_NAME = "full_metrics_interval"
@@ -77,10 +78,13 @@ type MetricsGeneratorInfo struct {
 	// Configuration labels: [,param="..."*]. Note the starting "," such that
 	// they can be appended to common labels:
 	configLabels string
-	// The number of metrics generated during the pass:
+	// The number of generated metrics:
 	metricCount int
 	// The number of bytes for all metrics:
 	byteCount uint64
+	// The number of skipped generation cycles, due to scheduler overlap (a new
+	// scan would have been started before the previous one was completed):
+	skippedCount int
 }
 
 type AllMetricsGeneratorInfo struct {
@@ -122,6 +126,15 @@ func (allMgi *AllMetricsGeneratorInfo) Report(generatorId string, metricCount in
 	allMgi.lck.Unlock()
 }
 
+func (allMgi *AllMetricsGeneratorInfo) ReportSkip(generatorId string) {
+	allMgi.lck.Lock()
+	mgi := allMgi.info[generatorId]
+	if mgi != nil {
+		mgi.skippedCount += 1
+	}
+	allMgi.lck.Unlock()
+}
+
 func (allMgi *AllMetricsGeneratorInfo) GenerateMetrics(buf *bytes.Buffer) int {
 	allMgi.lck.Lock()
 	defer allMgi.lck.Unlock()
@@ -130,14 +143,13 @@ func (allMgi *AllMetricsGeneratorInfo) GenerateMetrics(buf *bytes.Buffer) int {
 	for _, mgi := range allMgi.info {
 		fmt.Fprintf(
 			buf,
-			"%s{%s%s} %d %s\n%s{%s} %d %s\n%s{%s} %d %s\n",
+			"%s{%s%s} %d %s\n%s{%s} %d %s\n%s{%s} %d %s\n%s{%s} %d %s\n",
 			INTERNAL_METRICS_GENERATOR_UP_METRIC_NAME, mgi.commonLabels, mgi.configLabels, mgi.up, promTs,
 			INTERNAL_METRICS_GENERATOR_METRIC_COUNT_METRIC_NAME, mgi.commonLabels, mgi.metricCount, promTs,
 			INTERNAL_METRICS_GENERATOR_BYTE_COUNT_METRIC_NAME, mgi.commonLabels, mgi.byteCount, promTs,
+			INTERNAL_METRICS_GENERATOR_SKIPPED_COUNT_METRIC_NAME, mgi.commonLabels, mgi.skippedCount, promTs,
 		)
-		mgi.metricCount = 0
-		mgi.byteCount = 0
-		metricCount += 3
+		metricCount += 4
 	}
 	if metricCount > 0 {
 		buf.WriteByte('\n')
@@ -202,6 +214,10 @@ func (internalMetricsCtx *InternalMetricsContext) GetInterval() time.Duration {
 	return internalMetricsCtx.interval
 }
 
+func (internalMetricsCtx *InternalMetricsContext) GetGeneratorId() string {
+	return internalMetricsCtx.generatorId
+}
+
 var GlobalInternalMetricsCtx *InternalMetricsContext
 
 func BuildInternalMetricsCtxFromArgs() (*InternalMetricsContext, error) {
@@ -260,10 +276,7 @@ func BuildInternalMetricsCtxFromArgs() (*InternalMetricsContext, error) {
 		internalMetricsCtx.prevCpuTicks = procStat.UTime + procStat.STime
 	}
 
-	internalMetricsCtx.generatorId = fmt.Sprintf(
-		`%s="%s"`,
-		INTERNAL_METRICS_GENERATOR_ID_LABEL_NAME, INTERNAL_METRICS_GENERATOR_ID,
-	)
+	internalMetricsCtx.generatorId = INTERNAL_METRICS_GENERATOR_ID
 	return internalMetricsCtx, nil
 }
 
@@ -387,10 +400,6 @@ func (internalMetricsCtx *InternalMetricsContext) GenerateMetrics() {
 
 	// Report the internal metrics stats:
 	allMetricsGeneratorInfo.Report(internalMetricsCtx.generatorId, metricCount, byteCount)
-}
-
-func GenerateInternalMetrics(mGenCtx MetricsGenContext) {
-	mGenCtx.(*InternalMetricsContext).GenerateMetrics()
 }
 
 func init() {

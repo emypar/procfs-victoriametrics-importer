@@ -160,6 +160,10 @@ func (pidMetricsCtx *PidMetricsContext) GetInterval() time.Duration {
 	return pidMetricsCtx.interval
 }
 
+func (pidMetricsCtx *PidMetricsContext) GetGeneratorId() string {
+	return pidMetricsCtx.generatorId
+}
+
 func NewPidMetricsContext(
 	interval time.Duration,
 	procfsRoot string,

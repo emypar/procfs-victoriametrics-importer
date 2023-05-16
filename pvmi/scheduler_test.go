@@ -17,12 +17,16 @@ import (
 )
 
 type SchedulerTestMGenCtx struct {
-	interval time.Duration
-	id       string
+	interval    time.Duration
+	generatorId string
 }
 
 func (mGenCtx *SchedulerTestMGenCtx) GetInterval() time.Duration {
 	return mGenCtx.interval
+}
+
+func (mGenCtx *SchedulerTestMGenCtx) GetGeneratorId() string {
+	return mGenCtx.generatorId
 }
 
 func (mGenCtx *SchedulerTestMGenCtx) GenerateMetrics() {
@@ -43,8 +47,8 @@ func dumpSchedulerWorkUnitMap(schedCtx *SchedulerContext) string {
 			buf.WriteString(", ")
 		}
 		idList := make([]string, len(schedCtx.timeWorkUnitMap[nextTime]))
-		for i, mGenCtx := range schedCtx.timeWorkUnitMap[nextTime] {
-			idList[i] = mGenCtx.(*SchedulerTestMGenCtx).id
+		for i, wu := range schedCtx.timeWorkUnitMap[nextTime] {
+			idList[i] = wu.mGenCtx.GetGeneratorId()
 		}
 		sort.Strings(idList)
 		fmt.Fprintf(buf, "%s: [%s]", nextTime.UTC(), strings.Join(idList, ", "))
@@ -52,13 +56,13 @@ func dumpSchedulerWorkUnitMap(schedCtx *SchedulerContext) string {
 	return buf.String()
 }
 
-func todoToIdList(todo chan MetricsGenContext) []string {
+func todoToIdList(todo chan *SchedulerWorkUnit) []string {
 	idList := make([]string, 0)
 	done := false
 	for !done {
 		select {
-		case mGenCtx := <-todo:
-			idList = append(idList, mGenCtx.(*SchedulerTestMGenCtx).id)
+		case wu := <-todo:
+			idList = append(idList, wu.mGenCtx.GetGeneratorId())
 		default:
 			done = true
 		}
@@ -70,13 +74,13 @@ func todoToIdList(todo chan MetricsGenContext) []string {
 func testScheduler(t *testing.T, tc *SchedulerTestCase, startSchedFirst bool) {
 
 	var timerMock *testutils.CancelableTimerMock
-	newCancelableTimerFn := func(parentCtx context.Context, id string) CancelablePauseTimer {
+	newCancelableTimerFn := func(parentCtx context.Context, generatorId string) CancelablePauseTimer {
 		timerMock = testutils.NewCancelableTimerMock(parentCtx)
 		return CancelablePauseTimer(timerMock)
 	}
 	timeNow := time.UnixMilli(0)
 	timeNowFn := func() time.Time { return timeNow }
-	todo := make(chan MetricsGenContext, len(tc.mGenCtxList))
+	todo := make(chan *SchedulerWorkUnit, len(tc.mGenCtxList))
 	cycleSync := &SchedulerCycleSync{
 		start: make(chan bool, 1),
 		done:  make(chan bool, 1),
@@ -105,7 +109,7 @@ func testScheduler(t *testing.T, tc *SchedulerTestCase, startSchedFirst bool) {
 	for _, mGenCtx := range tc.mGenCtxList {
 		// Each add will make one call to timeNowFn:
 		timeNow = time.UnixMilli(0)
-		schedCtx.Add(MetricsGenContext(mGenCtx))
+		schedCtx.Add(mGenCtx)
 	}
 	todoList := todoToIdList(todo)
 	t.Logf("cycle# %d todo: [%s]", cycleN, strings.Join(todoList, ", "))
@@ -145,7 +149,7 @@ func SchedulerTestMGenCtxListToString(mGenCtxList []*SchedulerTestMGenCtx) strin
 		if i > 0 {
 			buf.WriteByte(',')
 		}
-		fmt.Fprintf(buf, "(id=%s,intrv=%s)", mGenCtx.id, mGenCtx.interval)
+		fmt.Fprintf(buf, "(generatorId=%s,intrv=%s)", mGenCtx.generatorId, mGenCtx.interval)
 	}
 	return buf.String()
 }
@@ -232,7 +236,7 @@ func TestScheduler(t *testing.T) {
 }
 
 func TestSchedulerStopEmpty(y *testing.T) {
-	todo := make(chan MetricsGenContext, 1)
+	todo := make(chan *SchedulerWorkUnit, 1)
 	schedCtx := NewSchedulerContext(todo, false, nil, nil, nil)
 	schedCtx.Start()
 	schedCtx.Stop()

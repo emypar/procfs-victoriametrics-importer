@@ -73,6 +73,10 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GetInterval() time
 	return procInterruptsMetricsCtx.interval
 }
 
+func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GetGeneratorId() string {
+	return procInterruptsMetricsCtx.generatorId
+}
+
 func NewProcInterruptsMetricsContext(
 	interval time.Duration,
 	fullMetricsFactor int64,

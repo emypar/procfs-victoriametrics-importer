@@ -89,6 +89,10 @@ func (procNetDevMetricsCtx *ProcNetDevMetricsContext) GetInterval() time.Duratio
 	return procNetDevMetricsCtx.interval
 }
 
+func (procNetDevMetricsCtx *ProcNetDevMetricsContext) GetGeneratorId() string {
+	return procNetDevMetricsCtx.generatorId
+}
+
 func NewProcNetDevMetricsContext(
 	interval time.Duration,
 	fullMetricsFactor int64,

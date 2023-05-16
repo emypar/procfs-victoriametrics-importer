@@ -106,6 +106,10 @@ func (procStatMetricsCtx *ProcStatMetricsContext) GetInterval() time.Duration {
 	return procStatMetricsCtx.interval
 }
 
+func (procStatMetricsCtx *ProcStatMetricsContext) GetGeneratorId() string {
+	return procStatMetricsCtx.generatorId
+}
+
 func NewProcStatMetricsContext(
 	interval time.Duration,
 	fullMetricsFactor int64,
