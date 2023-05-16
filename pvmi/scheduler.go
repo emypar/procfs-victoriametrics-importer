@@ -88,13 +88,7 @@ func (h *TimeHeap) Pop() any {
 
 type MetricsGenContext interface {
 	GetInterval() time.Duration
-}
-
-type MetricsGenFn func(MetricsGenContext)
-
-type MetricsWorkUnit struct {
-	mGenFn  MetricsGenFn
-	mGenCtx MetricsGenContext
+	GenerateMetrics()
 }
 
 type SchedulerCycleSync struct {
@@ -108,8 +102,8 @@ type SchedulerCycleSync struct {
 type SchedulerContext struct {
 	cond            *sync.Cond
 	timeHeap        *TimeHeap
-	timeWorkUnitMap map[time.Time][]*MetricsWorkUnit
-	todo            chan *MetricsWorkUnit
+	timeWorkUnitMap map[time.Time][]MetricsGenContext
+	todo            chan MetricsGenContext
 	closeTodoOnStop bool
 
 	// The logistics for stopping the scheduler, needed during
@@ -127,7 +121,7 @@ type SchedulerContext struct {
 }
 
 func NewSchedulerContext(
-	todo chan *MetricsWorkUnit,
+	todo chan MetricsGenContext,
 	closeTodoOnStop bool,
 	// params needed for testing:
 	newCancelableTimerFn NewCancelableTimerFn,
@@ -143,7 +137,7 @@ func NewSchedulerContext(
 	schedCtx := &SchedulerContext{
 		cond:                 sync.NewCond(&sync.Mutex{}),
 		timeHeap:             &TimeHeap{},
-		timeWorkUnitMap:      make(map[time.Time][]*MetricsWorkUnit),
+		timeWorkUnitMap:      make(map[time.Time][]MetricsGenContext),
 		todo:                 todo,
 		closeTodoOnStop:      closeTodoOnStop,
 		stopWg:               &sync.WaitGroup{},
@@ -235,21 +229,21 @@ func (schedCtx *SchedulerContext) Stop() {
 	SchedulerLog.Info("Scheduler stopped")
 }
 
-func (schedCtx *SchedulerContext) Add(mGenFn MetricsGenFn, mGenCtx MetricsGenContext) {
+func (schedCtx *SchedulerContext) Add(mGenCtx MetricsGenContext) {
 	schedCtx.cond.L.Lock()
 	wasEmpty := len(*schedCtx.timeHeap) == 0
-	schedCtx.AddWU(&MetricsWorkUnit{mGenFn, mGenCtx})
+	schedCtx.AddWU(mGenCtx)
 	if wasEmpty {
 		schedCtx.cond.Broadcast()
 	}
 	schedCtx.cond.L.Unlock()
 }
 
-func (schedCtx *SchedulerContext) AddWU(wu *MetricsWorkUnit) {
+func (schedCtx *SchedulerContext) AddWU(mGenCtx MetricsGenContext) {
 	// -> TODO:
-	schedCtx.todo <- wu
+	schedCtx.todo <- mGenCtx
 	// The next time is the next multiple of the interval, in milliseconds:
-	intervalMilliseconds := wu.mGenCtx.GetInterval().Milliseconds()
+	intervalMilliseconds := mGenCtx.GetInterval().Milliseconds()
 	timeNow := schedCtx.timeNowFn()
 	nextWUTime := time.UnixMilli(
 		(timeNow.UnixMilli()/intervalMilliseconds + 1) * intervalMilliseconds,
@@ -260,13 +254,13 @@ func (schedCtx *SchedulerContext) AddWU(wu *MetricsWorkUnit) {
 		// New time, add it to the heap:
 		//SchedulerLog.Infof("Create entry for nextWUTime=%s", nextWUTime.UTC())
 		heap.Push(schedCtx.timeHeap, nextWUTime)
-		schedCtx.timeWorkUnitMap[nextWUTime] = make([]*MetricsWorkUnit, 0)
+		schedCtx.timeWorkUnitMap[nextWUTime] = make([]MetricsGenContext, 0)
 	} else {
 		//SchedulerLog.Infof("Append to existent entry for nextWUTime=%s", nextWUTime.UTC())
 	}
 	schedCtx.timeWorkUnitMap[nextWUTime] = append(
 		schedCtx.timeWorkUnitMap[nextWUTime],
-		wu,
+		mGenCtx,
 	)
 }
 
@@ -277,8 +271,8 @@ func startTodoWorker(schedCtx *SchedulerContext, workerId int) {
 	schedCtx.stopWg.Add(1)
 
 	go func() {
-		for wu := range schedCtx.todo {
-			wu.mGenFn(wu.mGenCtx)
+		for mGenCtx := range schedCtx.todo {
+			mGenCtx.GenerateMetrics()
 		}
 		SchedulerLog.Infof("Scheduler worker# %d stopped (todo closed)", workerId)
 		schedCtx.stopWg.Done()
@@ -290,7 +284,7 @@ func StartGlobalSchedulerFromArgs() {
 	pidMetricsGenCount := GetPidMetricsGeneratorsCountFromArgs()
 	todoSize += 2 * (pidMetricsGenCount - 1)
 	GlobalSchedulerContext = NewSchedulerContext(
-		make(chan *MetricsWorkUnit, todoSize), true,
+		make(chan MetricsGenContext, todoSize), true,
 		nil, nil, nil,
 	)
 

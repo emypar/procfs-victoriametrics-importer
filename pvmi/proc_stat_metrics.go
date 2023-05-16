@@ -487,11 +487,6 @@ func (procStatMetricsCtx *ProcStatMetricsContext) GenerateMetrics() {
 	allMetricsGeneratorInfo.Report(procStatMetricsCtx.generatorId, metricCount, byteCount)
 }
 
-func GenerateProcStatMetrics(mGenCtx MetricsGenContext) {
-	procStatMetricsCtx := mGenCtx.(*ProcStatMetricsContext)
-	procStatMetricsCtx.GenerateMetrics()
-}
-
 var ProcStatMetricsScanIntervalArg = flag.Float64(
 	"proc-stat-metrics-scan-interval",
 	DEFAULT_PROC_STAT_METRICS_SCAN_INTERVAL,
@@ -578,7 +573,7 @@ func StartProcStatMetricsFromArgs() error {
 	)
 
 	GlobalProcStatMetricsCtx = procStatMetricsCtx
-	GlobalSchedulerContext.Add(GenerateProcStatMetrics, MetricsGenContext(procStatMetricsCtx))
+	GlobalSchedulerContext.Add(procStatMetricsCtx)
 	return nil
 }
 

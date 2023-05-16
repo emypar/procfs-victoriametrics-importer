@@ -343,7 +343,7 @@ func runAllPidMetricsTestCases(
 			wChan:             wChan,
 			activeThreshold:   activeThreshold,
 		})
-		GenerateAllPidMetrics(mGenCtx)
+		mGenCtx.GenerateMetrics()
 	}
 	gotMetrics := testutils.CollectMetrics(mgf, bufPool.ReturnBuffer)
 	// Check buffer pool:
@@ -387,7 +387,7 @@ func runAllPidMetricsTestCases(
 	}
 }
 
-func testAllPidMetricsTestCases(t *testing.T, testCaseFile string) {
+func testPidMetricsAllTestCases(t *testing.T, testCaseFile string) {
 	pmtcList := []PidMetricsTestCase{}
 	err := testutils.LoadJsonFile(testCaseFile, &pmtcList)
 	if err != nil {
@@ -417,10 +417,10 @@ func testAllPidMetricsTestCases(t *testing.T, testCaseFile string) {
 	}
 }
 
-func TestAllPidMetricsTestCases(t *testing.T) {
-	testAllPidMetricsTestCases(t, path.Join(TestdataTestCasesDir, PID_METRICS_TEST_CASES_FILE_NAME))
+func TestPidMetricsAllTestCases(t *testing.T) {
+	testPidMetricsAllTestCases(t, path.Join(TestdataTestCasesDir, PID_METRICS_TEST_CASES_FILE_NAME))
 }
 
 func TestAllPidMetricsDeltaTestCases(t *testing.T) {
-	testAllPidMetricsTestCases(t, path.Join(TestdataTestCasesDir, ALL_PID_METRICS_DELTA_TEST_CASES_FILE_NAME))
+	testPidMetricsAllTestCases(t, path.Join(TestdataTestCasesDir, ALL_PID_METRICS_DELTA_TEST_CASES_FILE_NAME))
 }

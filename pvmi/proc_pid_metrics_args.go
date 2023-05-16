@@ -201,7 +201,7 @@ func StartPidMetricsFromArgs() error {
 			fmt.Sprintf(`%s="%.02f%%"`, PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_PCT_LABEL_NAME, *PidMetricsActiveThresholdPctArg),
 			fmt.Sprintf(`%s="%d"`, PROC_PID_METRICS_UP_ACTIVE_THRESHOLD_LABEL_NAME, pidMetricsCtx.activeThreshold),
 		)
-		GlobalSchedulerContext.Add(GenerateAllPidMetrics, MetricsGenContext(pidMetricsCtx))
+		GlobalSchedulerContext.Add(pidMetricsCtx)
 	}
 
 	return nil

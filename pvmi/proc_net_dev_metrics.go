@@ -352,11 +352,6 @@ func (procNetDevMetricsCtx *ProcNetDevMetricsContext) GenerateMetrics() {
 	allMetricsGeneratorInfo.Report(procNetDevMetricsCtx.generatorId, metricCount, byteCount)
 }
 
-func GenerateProcNetDevMetrics(mGenCtx MetricsGenContext) {
-	procNetDevMetricsCtx := mGenCtx.(*ProcNetDevMetricsContext)
-	procNetDevMetricsCtx.GenerateMetrics()
-}
-
 var ProcNetDevMetricsScanIntervalArg = flag.Float64(
 	"proc-net-dev-metrics-scan-interval",
 	DEFAULT_PROC_NET_DEV_METRICS_SCAN_INTERVAL,
@@ -436,7 +431,7 @@ func StartProcNetDevMetricsFromArgs() error {
 		),
 	)
 	GlobalProcNetDevMetricsCtx = procNetDevMetricsCtx
-	GlobalSchedulerContext.Add(GenerateProcNetDevMetrics, MetricsGenContext(procNetDevMetricsCtx))
+	GlobalSchedulerContext.Add(procNetDevMetricsCtx)
 	return nil
 }
 

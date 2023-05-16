@@ -65,7 +65,7 @@ func procInterruptsTest(t *testing.T, tc *ProcInterruptsTestCase) {
 		testutils.CollectMetrics(
 			func(wChan chan *bytes.Buffer) {
 				procInterruptsMetricsCtx.wChan = wChan
-				GenerateProcInterruptsMetrics(MetricsGenContext(procInterruptsMetricsCtx))
+				procInterruptsMetricsCtx.GenerateMetrics()
 			},
 			bufPool.ReturnBuffer,
 		),

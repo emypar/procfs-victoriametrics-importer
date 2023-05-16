@@ -286,10 +286,7 @@ func StartInternalMetricsFromArgs() error {
 		1,
 		fmt.Sprintf(`%s="%s"`, INTERNAL_METRICS_GENERATOR_CONFIG_INTERVAL_LABEL_NAME, GlobalInternalMetricsCtx.interval),
 	)
-	GlobalSchedulerContext.Add(
-		GenerateInternalMetrics,
-		MetricsGenContext(GlobalInternalMetricsCtx),
-	)
+	GlobalSchedulerContext.Add(GlobalInternalMetricsCtx)
 	return nil
 }
 

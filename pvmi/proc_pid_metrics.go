@@ -1384,8 +1384,3 @@ func (pidMetricsCtx *PidMetricsContext) GenerateMetrics() {
 	// Report the internal metrics stats:
 	allMetricsGeneratorInfo.Report(pidMetricsCtx.generatorId, metricCount, byteCount)
 }
-
-func GenerateAllPidMetrics(mGenCtx MetricsGenContext) {
-	pidMetricsCtx := mGenCtx.(*PidMetricsContext)
-	pidMetricsCtx.GenerateMetrics()
-}

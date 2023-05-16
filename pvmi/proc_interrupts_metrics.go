@@ -257,11 +257,6 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 	allMetricsGeneratorInfo.Report(procInterruptsMetricsCtx.generatorId, metricCount, byteCount)
 }
 
-func GenerateProcInterruptsMetrics(mGenCtx MetricsGenContext) {
-	procInterruptsMetricsCtx := mGenCtx.(*ProcInterruptsMetricsContext)
-	procInterruptsMetricsCtx.GenerateMetrics()
-}
-
 var ProcInterruptsMetricsScanIntervalArg = flag.Float64(
 	"proc-interrupts-metrics-scan-interval",
 	DEFAULT_PROC_INTERRUPTS_METRICS_SCAN_INTERVAL,
@@ -343,7 +338,7 @@ func StartProcInterruptsMetricsFromArgs() error {
 	)
 
 	GlobalProcInterruptsMetricsCtx = procInterruptsMetricsCtx
-	GlobalSchedulerContext.Add(GenerateProcInterruptsMetrics, MetricsGenContext(procInterruptsMetricsCtx))
+	GlobalSchedulerContext.Add(procInterruptsMetricsCtx)
 	return nil
 }
 

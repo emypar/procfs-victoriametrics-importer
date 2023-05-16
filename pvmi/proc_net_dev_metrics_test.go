@@ -85,7 +85,7 @@ func procNetDevTest(t *testing.T, tc *ProcNetDevTestCase) {
 		testutils.CollectMetrics(
 			func(wChan chan *bytes.Buffer) {
 				procNetDevMetricsCtx.wChan = wChan
-				GenerateProcNetDevMetrics(MetricsGenContext(procNetDevMetricsCtx))
+				procNetDevMetricsCtx.GenerateMetrics()
 			},
 			bufPool.ReturnBuffer,
 		),

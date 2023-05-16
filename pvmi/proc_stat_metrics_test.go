@@ -85,7 +85,7 @@ func procStatTest(t *testing.T, tc *ProcStatMetricsTestCase) {
 		testutils.CollectMetrics(
 			func(wChan chan *bytes.Buffer) {
 				procStatMetricsCtx.wChan = wChan
-				GenerateProcStatMetrics(MetricsGenContext(procStatMetricsCtx))
+				procStatMetricsCtx.GenerateMetrics()
 			},
 			bufPool.ReturnBuffer,
 		),
