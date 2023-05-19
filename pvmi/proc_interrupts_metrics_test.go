@@ -20,15 +20,15 @@ type ProcInterruptsTestCase struct {
 	Name                    string
 	ProcfsRoot              string
 	PrevInterrupts          procfs.Interrupts
-	PrevRefreshGroupNum     map[string]int64
-	PrevNextRefreshGroupNum int64
+	PrevRefreshGroupNum     map[string]int
+	PrevNextRefreshGroupNum int
 	WantInterrupts          procfs.Interrupts
 	Timestamp               time.Time
-	WantRefreshGroupNum     map[string]int64
+	WantRefreshGroupNum     map[string]int
 	WantMetrics             []string
-	FullMetricsFactor       int64
-	RefreshCycleNum         int64
-	WantNextRefreshGroupNum int64
+	FullMetricsFactor       int
+	RefreshCycleNum         int
+	WantNextRefreshGroupNum int
 }
 
 const (
@@ -44,7 +44,7 @@ func procInterruptsTest(t *testing.T, tc *ProcInterruptsTestCase) {
 	bufPool := NewBufferPool(256)
 	procInterruptsMetricsCtx, err := NewProcInterruptsMetricsContext(
 		time.Second,
-		tc.FullMetricsFactor,
+		time.Second*time.Duration(tc.FullMetricsFactor),
 		tc.ProcfsRoot,
 		TestHostname,
 		TestJob,
@@ -55,7 +55,9 @@ func procInterruptsTest(t *testing.T, tc *ProcInterruptsTestCase) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	procInterruptsMetricsCtx.prevInterrupts = tc.PrevInterrupts
+	procInterruptsMetricsCtx.skipSoftirqs = true
+	prevCrtIndex := procInterruptsMetricsCtx.crtIndex
+	procInterruptsMetricsCtx.interrupts[prevCrtIndex] = tc.PrevInterrupts
 	procInterruptsMetricsCtx.refreshCycleNum = tc.RefreshCycleNum
 	if tc.PrevRefreshGroupNum != nil {
 		procInterruptsMetricsCtx.refreshGroupNum = tc.PrevRefreshGroupNum
@@ -71,45 +73,50 @@ func procInterruptsTest(t *testing.T, tc *ProcInterruptsTestCase) {
 		),
 		true,
 	)
-	// Visual checks:
-	t.Logf("newIrqs: %v\n", procInterruptsMetricsCtx.newIrqs)
-	t.Logf("refreshGroupNum: %v\n", procInterruptsMetricsCtx.refreshGroupNum)
-	t.Logf("nextRefreshGroupNum: %v\n", procInterruptsMetricsCtx.nextRefreshGroupNum)
 
-	// Check buffer pool:
 	wantBufPoolCount := int(0)
 	gotBufPoolCount := bufPool.CheckedOutCount()
 	if wantBufPoolCount != gotBufPoolCount {
 		t.Errorf("bufPool.CheckedOutCount(): want %d, got %d", wantBufPoolCount, gotBufPoolCount)
 	}
-	// Note: certain fields are updated only for delta strategy:
-	if tc.FullMetricsFactor > 1 {
+
+	wantCrtIndex := 1 - prevCrtIndex
+	if wantCrtIndex != procInterruptsMetricsCtx.crtIndex {
+		t.Errorf(
+			"crtIndex: want: %d, got: %d",
+			wantCrtIndex, procInterruptsMetricsCtx.crtIndex,
+		)
+	}
+
+	if tc.WantInterrupts != nil {
 		if diff := cmp.Diff(
 			tc.WantInterrupts,
-			procInterruptsMetricsCtx.prevInterrupts,
+			procInterruptsMetricsCtx.interrupts[procInterruptsMetricsCtx.crtIndex],
 		); diff != "" {
 			t.Errorf("procfs.Interrupts mismatch (-want +got):\n%s", diff)
 		}
-		if tc.WantRefreshGroupNum != nil {
-			if diff := cmp.Diff(
-				tc.WantRefreshGroupNum,
-				procInterruptsMetricsCtx.refreshGroupNum,
-			); diff != "" {
-				t.Errorf("refreshGroupNum mismatch (-want +got):\n%s", diff)
-			}
-		}
-		if tc.WantNextRefreshGroupNum != procInterruptsMetricsCtx.nextRefreshGroupNum {
-			t.Errorf(
-				"nextRefreshGroupNum: want: %d, got: %d",
-				tc.WantNextRefreshGroupNum, procInterruptsMetricsCtx.nextRefreshGroupNum,
-			)
+	}
+
+	if tc.WantRefreshGroupNum != nil {
+		if diff := cmp.Diff(
+			tc.WantRefreshGroupNum,
+			procInterruptsMetricsCtx.refreshGroupNum,
+		); diff != "" {
+			t.Errorf("refreshGroupNum mismatch (-want +got):\n%s", diff)
 		}
 	}
+
+	if tc.WantNextRefreshGroupNum != procInterruptsMetricsCtx.nextRefreshGroupNum {
+		t.Errorf(
+			"nextRefreshGroupNum: want: %d, got: %d",
+			tc.WantNextRefreshGroupNum, procInterruptsMetricsCtx.nextRefreshGroupNum,
+		)
+	}
+
 	wantMetrics := testutils.DuplicateStrings(tc.WantMetrics, true)
 	if diff := cmp.Diff(wantMetrics, gotMetrics); diff != "" {
 		t.Errorf("Metrics mismatch (-want +got):\n%s", diff)
 	}
-
 }
 
 func TestProcInterrupts(t *testing.T) {
