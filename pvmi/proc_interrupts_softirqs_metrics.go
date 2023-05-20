@@ -153,7 +153,7 @@ func NewProcInterruptsMetricsContext(
 			PROC_INTERRUPTS_INFO_INFO_LABEL_NAME,
 		),
 		softirqsCounterMetricFmt: fmt.Sprintf(
-			`%s{%s="%s",%s="%s",%s="%%s",%s="%%d"} %%s %%s`+"\n",
+			`%s{%s="%s",%s="%s",%s="%%s",%s="%%d"} %%d %%s`+"\n",
 			PROC_SOFTIRQS_TOTAL_METRIC_NAME,
 			HOSTNAME_LABEL_NAME, hostname,
 			JOB_LABEL_NAME, job,
@@ -271,11 +271,11 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 		)
 		prevSoftirqs := procInterruptsMetricsCtx.softirqs[1-crtIndex]
 		softirqsCounterMetricFmt := procInterruptsMetricsCtx.softirqsCounterMetricFmt
-		fullMetrics := fullMetricsFactor <= 1 || prevSoftirqs == nil
+		fullMetrics := fullMetricsFactor <= 1
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_HI
 		cpus = softirqs.Hi
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -292,7 +292,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_TIMER
 		cpus = softirqs.Timer
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -309,7 +309,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_NET_RX
 		cpus = softirqs.NetRx
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -326,7 +326,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_NET_TX
 		cpus = softirqs.NetTx
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -343,7 +343,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_BLOCK
 		cpus = softirqs.Block
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -360,7 +360,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_IRQ_POLL
 		cpus = softirqs.IRQPoll
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -377,7 +377,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_TASKLET
 		cpus = softirqs.Tasklet
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -394,7 +394,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_SCHED
 		cpus = softirqs.Sched
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -411,7 +411,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_HR_TIMER
 		cpus = softirqs.HRTimer
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1
@@ -428,7 +428,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 
 		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_RCU
 		cpus = softirqs.RCU
-		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum || prevSoftirqs == nil {
 			for cpu, value := range cpus {
 				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
 				metricCount += 1

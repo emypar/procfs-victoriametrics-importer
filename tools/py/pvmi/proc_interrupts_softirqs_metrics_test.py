@@ -1,9 +1,10 @@
 #! /usr/bin/env python3
 
-# support for pvmi/proc_interrupts_metrics_test.go
+# support for pvmi/proc_interrupts_softirqs_metrics_test.go
 
 import dataclasses
 import os
+import re
 from copy import deepcopy
 from typing import Dict, List, Optional
 
@@ -11,8 +12,12 @@ import procfs
 from metrics_common_test import TestdataProcfsRoot, TestdataTestCasesDir
 from tools_common import StructBase, rel_path_to_file, save_to_json_file
 
-from . import proc_interrupts_metrics
 from .common import Metric, metrics_delta, ts_to_go_time
+from .proc_interrupts_softirqs_metrics import (
+    proc_interrupts_metrics,
+    proc_softirqs_metrics,
+    softirqs_field_to_irq_map,
+)
 
 # The following should match pvmi/proc_stat_metrics_test.go:
 PROC_INTERRUPTS_METRICS_TEST_CASES_FILE_NAME = "proc_interrupts_metrics_test_cases.json"
@@ -22,6 +27,13 @@ PROC_INTERRUPTS_METRICS_DELTA_TEST_CASES_FILE_NAME = (
 REMOVED_PROC_INTERRUPTS = {
     "REMOVED_IRQ": procfs.Interrupt(Info="non existent", Devices="none", Values=[])
 }
+PROC_SOFTIRQS_METRICS_TEST_CASES_FILE_NAME = "proc_softirqs_metrics_test_cases.json"
+PROC_SOFTIRQS_METRICS_DELTA_TEST_CASES_FILE_NAME = (
+    "proc_softirqs_metrics_delta_test_cases.json"
+)
+
+softirqs_field_list = sorted(softirqs_field_to_irq_map)
+softirq_list = sorted(softirqs_field_to_irq_map.values())
 
 
 @dataclasses.dataclass
@@ -29,9 +41,12 @@ class ProcInterruptsMetricsTestCase(StructBase):
     Name: str = ""
     ProcfsRoot: str = TestdataProcfsRoot
     PrevInterrupts: Optional[procfs.Interrupts] = None
+    PrevSoftirqs: Optional[procfs.Softirqs] = None
+    KeepNumCpus: int = 0
     PrevRefreshGroupNum: Optional[Dict[str, int]] = None
     PrevNextRefreshGroupNum: int = 0
     WantInterrupts: Optional[procfs.Interrupts] = None
+    WantSoftirqs: Optional[procfs.Softirqs] = None
     Timestamp: int = 0
     WantMetrics: List[Metric] = dataclasses.field(default_factory=list)
     FullMetricsFactor: int = 0
@@ -57,7 +72,7 @@ def load_pirqtc(
         ProcfsRoot=rel_path_to_file(procfs_root),
         WantInterrupts=proc_interrupts,
         Timestamp=timestamp,
-        WantMetrics=proc_interrupts_metrics.proc_interrupts_metrics(proc_interrupts),
+        WantMetrics=proc_interrupts_metrics(proc_interrupts),
         FullMetricsFactor=full_metrics_factor,
     )
     if tc.FullMetricsFactor > 1:
@@ -90,7 +105,6 @@ def make_full_refresh_pirqtc(
         break
     timestamp = ts_to_go_time(ts)
     irq_list = sorted(proc_interrupts)
-    want_next_refresh_group_num = len(proc_interrupts)
     for full_metrics_factor in range(2, len(proc_interrupts) + 2):
         refresh_group_num = {
             irq: i % full_metrics_factor for (i, irq) in enumerate(irq_list)
@@ -102,11 +116,11 @@ def make_full_refresh_pirqtc(
                 for irq in proc_interrupts
                 if refresh_group_num[irq] == refresh_cycle_num
             }
-            want_metrics = proc_interrupts_metrics.proc_interrupts_metrics(
-                refresh_proc_interrupts
-            )
+            want_metrics = proc_interrupts_metrics(refresh_proc_interrupts)
             tc = ProcInterruptsMetricsTestCase(
-                Name=f'{name}:{"+".join(sorted(refresh_proc_interrupts))}',
+                Name=f'{name}:{"+".join(sorted(refresh_proc_interrupts))}'
+                if refresh_proc_interrupts
+                else name,
                 ProcfsRoot=rel_path_to_file(procfs_root),
                 PrevInterrupts=proc_interrupts,
                 PrevRefreshGroupNum=refresh_group_num,
@@ -155,7 +169,7 @@ def make_removed_irq_pirqtc(
         PrevNextRefreshGroupNum=want_next_refresh_group_num,
         WantInterrupts=proc_interrupts,
         Timestamp=timestamp,
-        WantMetrics=proc_interrupts_metrics.proc_interrupts_metrics(
+        WantMetrics=proc_interrupts_metrics(
             REMOVED_PROC_INTERRUPTS,
             ts=ts,
             _clear_pseudo_only=True,
@@ -194,11 +208,11 @@ def make_delta_pirqtc(
             prev_proc_interrupts = deepcopy(proc_interrupts)
             prev_proc_interrupts[irq].Values[cpu] = prev_value
             want_metrics = metrics_delta(
-                proc_interrupts_metrics.proc_interrupts_metrics(prev_proc_interrupts),
-                proc_interrupts_metrics.proc_interrupts_metrics(proc_interrupts),
+                proc_interrupts_metrics(prev_proc_interrupts),
+                proc_interrupts_metrics(proc_interrupts),
             )
             tc = ProcInterruptsMetricsTestCase(
-                Name=f"{name}:cpu={cpu},irq={irq}:{prev_value}->{value}",
+                Name=f"{name}:irq={irq},cpu={cpu}:{prev_value}->{value}",
                 ProcfsRoot=rel_path_to_file(procfs_root),
                 PrevInterrupts=prev_proc_interrupts,
                 PrevRefreshGroupNum=refresh_group_num,
@@ -213,6 +227,160 @@ def make_delta_pirqtc(
             )
             pirqtc_list.append(tc)
     return pirqtc_list
+
+
+def load_sirqtc(
+    name: str = "full",
+    proc_softirqs: Optional[procfs.Softirqs] = None,
+    procfs_root: str = TestdataProcfsRoot,
+    full_metrics_factor: int = 0,
+    keep_num_cpus: int = -1,
+) -> ProcInterruptsMetricsTestCase:
+    if proc_softirqs is None:
+        if keep_num_cpus < 0:
+            proc_stat = procfs.load_stat2()
+            keep_num_cpus = len(proc_stat.CPU) - 1
+        proc_softirqs = procfs.load_softirqs(
+            procfs_root=procfs_root, keep_num_cpus=keep_num_cpus
+        )
+    else:
+        keep_num_cpus = len(proc_softirqs.Hi)
+    ts = proc_softirqs._ts
+    timestamp = ts_to_go_time(ts)
+    tc = ProcInterruptsMetricsTestCase(
+        Name=name,
+        ProcfsRoot=rel_path_to_file(procfs_root),
+        KeepNumCpus=keep_num_cpus,
+        WantSoftirqs=proc_softirqs,
+        Timestamp=timestamp,
+        WantMetrics=proc_softirqs_metrics(proc_softirqs),
+        FullMetricsFactor=full_metrics_factor,
+    )
+    if tc.FullMetricsFactor > 1:
+        refresh_group_num = {
+            softirq: i % tc.FullMetricsFactor
+            for i, softirq in enumerate(softirq_list)
+            if i < len(softirq_list) - 1  # i.e. leave one to be auto-assigned
+        }
+        tc.PrevRefreshGroupNum = refresh_group_num
+        tc.PrevNextRefreshGroupNum = (len(softirq_list) - 1) % tc.FullMetricsFactor
+        tc.WantRefreshGroupNum = dict(refresh_group_num)
+        tc.WantRefreshGroupNum[softirq_list[-1]] = tc.PrevNextRefreshGroupNum
+        tc.WantNextRefreshGroupNum = (
+            tc.PrevNextRefreshGroupNum + 1
+        ) % tc.FullMetricsFactor
+    return tc
+
+
+def make_full_refresh_sirqtc(
+    name: str = "full-refresh",
+    proc_softirqs: Optional[procfs.Softirqs] = None,
+    procfs_root: str = TestdataProcfsRoot,
+    keep_num_cpus: int = -1,
+) -> List[ProcInterruptsMetricsTestCase]:
+    sirqtc_list = []
+    if proc_softirqs is None:
+        if keep_num_cpus < 0:
+            proc_stat = procfs.load_stat2()
+            keep_num_cpus = len(proc_stat.CPU) - 1
+        proc_softirqs = procfs.load_softirqs(
+            procfs_root=procfs_root, keep_num_cpus=keep_num_cpus
+        )
+    else:
+        keep_num_cpus = len(proc_softirqs.Hi)
+    ts = proc_softirqs._ts
+    timestamp = ts_to_go_time(ts)
+    full_metrics_by_softirq = {}
+    for metric in proc_softirqs_metrics(proc_softirqs):
+        m = re.search('''interrupt="([^"]*)"''', metric.metric)
+        if m is not None:
+            full_metrics_by_softirq[m.group(1)] = metric
+    for full_metrics_factor in range(2, len(softirq_list) + 2):
+        refresh_group_num = {
+            softirq: i % full_metrics_factor for (i, softirq) in enumerate(softirq_list)
+        }
+        want_next_refresh_group_num = len(refresh_group_num) % full_metrics_factor
+        for refresh_cycle_num in range(full_metrics_factor):
+            refresh_softirqs = [
+                softirq
+                for softirq in softirq_list
+                if refresh_group_num[softirq] == refresh_cycle_num
+            ]
+            want_metrics = [
+                full_metrics_by_softirq[softirq] for softirq in refresh_softirqs
+            ]
+            tc = ProcInterruptsMetricsTestCase(
+                Name=f'{name}:{"+".join(sorted(refresh_softirqs))}'
+                if refresh_softirqs
+                else name,
+                ProcfsRoot=rel_path_to_file(procfs_root),
+                PrevSoftirqs=proc_softirqs,
+                KeepNumCpus=keep_num_cpus,
+                PrevRefreshGroupNum=refresh_group_num,
+                PrevNextRefreshGroupNum=want_next_refresh_group_num,
+                WantSoftirqs=proc_softirqs,
+                Timestamp=timestamp,
+                WantMetrics=want_metrics,
+                FullMetricsFactor=full_metrics_factor,
+                RefreshCycleNum=refresh_cycle_num,
+                WantRefreshGroupNum=refresh_group_num,
+                WantNextRefreshGroupNum=want_next_refresh_group_num,
+            )
+            sirqtc_list.append(tc)
+    return sirqtc_list
+
+
+def make_delta_sirqtc(
+    name: str = "delta",
+    proc_softirqs: Optional[procfs.Softirqs] = None,
+    procfs_root: str = TestdataProcfsRoot,
+    keep_num_cpus: int = -1,
+) -> List[ProcInterruptsMetricsTestCase]:
+    sirqtc_list = []
+    if proc_softirqs is None:
+        if keep_num_cpus < 0:
+            proc_stat = procfs.load_stat2()
+            keep_num_cpus = len(proc_stat.CPU) - 1
+        proc_softirqs = procfs.load_softirqs(
+            procfs_root=procfs_root, keep_num_cpus=keep_num_cpus
+        )
+    else:
+        keep_num_cpus = len(proc_softirqs.Hi)
+    ts = proc_softirqs._ts
+    timestamp = ts_to_go_time(ts)
+    # Ensure that no irq will have a full refresh cycle:
+    full_metrics_factor = 2 * len(softirq_list) + 1
+    refresh_cycle_num = full_metrics_factor - 1
+    refresh_group_num = {
+        softirq: i % full_metrics_factor for (i, softirq) in enumerate(softirq_list)
+    }
+    next_refresh_group_num = len(softirq_list) % full_metrics_factor
+    for softirq in softirqs_field_list:
+        for cpu, value in enumerate(getattr(proc_softirqs, softirq)):
+            prev_value = 0 if value != 0 else 1
+            prev_proc_softirqs = deepcopy(proc_softirqs)
+            getattr(prev_proc_softirqs, softirq)[cpu] = prev_value
+            want_metrics = metrics_delta(
+                proc_softirqs_metrics(prev_proc_softirqs),
+                proc_softirqs_metrics(proc_softirqs),
+            )
+            tc = ProcInterruptsMetricsTestCase(
+                Name=f"{name}:softirq={softirq},cpu={cpu}:{prev_value}->{value}",
+                ProcfsRoot=rel_path_to_file(procfs_root),
+                PrevSoftirqs=prev_proc_softirqs,
+                KeepNumCpus=keep_num_cpus,
+                PrevRefreshGroupNum=refresh_group_num,
+                PrevNextRefreshGroupNum=next_refresh_group_num,
+                WantSoftirqs=proc_softirqs,
+                Timestamp=timestamp,
+                WantMetrics=want_metrics,
+                FullMetricsFactor=full_metrics_factor,
+                RefreshCycleNum=refresh_cycle_num,
+                WantRefreshGroupNum=refresh_group_num,
+                WantNextRefreshGroupNum=next_refresh_group_num,
+            )
+            sirqtc_list.append(tc)
+    return sirqtc_list
 
 
 def generate_test_case_files(
@@ -238,4 +406,29 @@ def generate_test_case_files(
     save_to_json_file(
         [pirqtc.to_json_compat() for pirqtc in pirqtc_list],
         os.path.join(test_case_dir, PROC_INTERRUPTS_METRICS_DELTA_TEST_CASES_FILE_NAME),
+    )
+
+    sirqtc_list = []
+    proc_stat = procfs.load_stat2()
+    keep_num_cpus = len(proc_stat.CPU) - 1
+    proc_softirqs = procfs.load_softirqs(
+        procfs_root=procfs_root, keep_num_cpus=keep_num_cpus
+    )
+    for full_metrics_factor in [0, 1, len(softirq_list) + 1]:
+        sirqtc_list.append(
+            load_sirqtc(
+                proc_softirqs=proc_softirqs,
+                full_metrics_factor=full_metrics_factor,
+                keep_num_cpus=keep_num_cpus,
+            )
+        )
+    sirqtc_list.extend(make_full_refresh_sirqtc(proc_softirqs=proc_softirqs))
+    save_to_json_file(
+        [sirqtc.to_json_compat() for sirqtc in sirqtc_list],
+        os.path.join(test_case_dir, PROC_SOFTIRQS_METRICS_TEST_CASES_FILE_NAME),
+    )
+    sirqtc_list = make_delta_sirqtc(proc_softirqs=proc_softirqs)
+    save_to_json_file(
+        [sirqtc.to_json_compat() for sirqtc in sirqtc_list],
+        os.path.join(test_case_dir, PROC_SOFTIRQS_METRICS_DELTA_TEST_CASES_FILE_NAME),
     )
