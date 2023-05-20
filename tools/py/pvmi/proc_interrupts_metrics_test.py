@@ -29,7 +29,6 @@ class ProcInterruptsMetricsTestCase(StructBase):
     Name: str = ""
     ProcfsRoot: str = TestdataProcfsRoot
     PrevInterrupts: Optional[procfs.Interrupts] = None
-    PrevTimestamp: int = 0
     PrevRefreshGroupNum: Optional[Dict[str, int]] = None
     PrevNextRefreshGroupNum: int = 0
     WantInterrupts: Optional[procfs.Interrupts] = None
@@ -62,13 +61,19 @@ def load_pirqtc(
         FullMetricsFactor=full_metrics_factor,
     )
     if tc.FullMetricsFactor > 1:
-        tc.WantRefreshGroupNum = {}
-        tc.WantNextRefreshGroupNum = tc.PrevNextRefreshGroupNum
-        for irq in sorted(tc.WantInterrupts):
-            tc.WantRefreshGroupNum[irq] = tc.WantNextRefreshGroupNum
-            tc.WantNextRefreshGroupNum += 1
-            if tc.WantNextRefreshGroupNum >= tc.FullMetricsFactor:
-                tc.WantNextRefreshGroupNum = 0
+        irq_list = sorted(proc_interrupts)
+        refresh_group_num = {
+            irq: i % tc.FullMetricsFactor
+            for i, irq in enumerate(irq_list)
+            if i < len(irq_list) - 1  # i.e. leave one to be auto-assigned
+        }
+        tc.PrevRefreshGroupNum = refresh_group_num
+        tc.PrevNextRefreshGroupNum = (len(irq_list) - 1) % tc.FullMetricsFactor
+        tc.WantRefreshGroupNum = dict(refresh_group_num)
+        tc.WantRefreshGroupNum[irq_list[-1]] = tc.PrevNextRefreshGroupNum
+        tc.WantNextRefreshGroupNum = (
+            tc.PrevNextRefreshGroupNum + 1
+        ) % tc.FullMetricsFactor
     return tc
 
 
