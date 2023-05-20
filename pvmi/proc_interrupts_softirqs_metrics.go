@@ -12,6 +12,10 @@ import (
 )
 
 const (
+	// Use for the auto-detection of the number of cpus to keep (/proc/softirqs
+	// may report more than actually exist):
+	PROC_SOFTIRQS_KEEP_NUM_CPUS_AUTODETECT = -1
+
 	// Stats metrics:
 	PROC_INTERRUPTS_METRICS_GENERATOR_ID = "proc_interrupts_metrics"
 )
@@ -39,10 +43,15 @@ type ProcInterruptsMetricsContext struct {
 	// state of the object and object[1 - crtIndex], if not nil,  holds the
 	// previous one.
 	interrupts [2]procfs.Interrupts
+	softirqs   [2]*procfs.Softirqs
 	crtIndex   int
+	// /proc/softirqs may have more columns that actual CPUs. Limit the parsing
+	// to the actual useful data (0 means no cap):
+	keepNumCpus int
 	// Precomputed formats to speed up the metrics generation:
 	interruptsCounterMetricFmt string
 	interruptsInfoMetricFmt    string
+	softirqsCounterMetricFmt   string
 	// Internal metrics generator ID:
 	generatorId string
 	// The channel receiving the generated metrics:
@@ -80,6 +89,7 @@ func NewProcInterruptsMetricsContext(
 	interval time.Duration,
 	fullMetricsInterval time.Duration,
 	procfsRoot string,
+	keepNumCpus int,
 	// needed for testing:
 	hostname string,
 	job string,
@@ -106,6 +116,15 @@ func NewProcInterruptsMetricsContext(
 	if err != nil {
 		return nil, err
 	}
+	if keepNumCpus == PROC_SOFTIRQS_KEEP_NUM_CPUS_AUTODETECT {
+		stat, err := fs.Stat2(nil)
+		if err != nil {
+			ProcInterruptsMetricsLog.Warnf("Cannot autodetect CPU#: %v", err)
+			keepNumCpus = 0
+		} else {
+			keepNumCpus = len(stat.CPU) - 1 // the slice includes `all'
+		}
+	}
 	procInterruptsMetricsCtx := &ProcInterruptsMetricsContext{
 		interval:            interval,
 		fullMetricsInterval: fullMetricsInterval,
@@ -115,13 +134,14 @@ func NewProcInterruptsMetricsContext(
 		nextRefreshGroupNum: 0,
 		fs:                  fs,
 		crtIndex:            1,
+		keepNumCpus:         keepNumCpus,
 		interruptsCounterMetricFmt: fmt.Sprintf(
 			`%s{%s="%s",%s="%s",%s="%%s",%s="%%d"} %%s %%s`+"\n",
 			PROC_INTERRUPTS_TOTAL_METRIC_NAME,
 			HOSTNAME_LABEL_NAME, hostname,
 			JOB_LABEL_NAME, job,
 			PROC_INTERRUPTS_IRQ_LABEL_NAME,
-			PROC_INTERRUPTS_TOTAL_CPU_LABEL_NAME,
+			PROC_INTERRUPTS_CPU_LABEL_NAME,
 		),
 		interruptsInfoMetricFmt: fmt.Sprintf(
 			`%s{%s="%s",%s="%s",%s="%%s",%s="%%s",%s="%%s"} %%d %%s`+"\n",
@@ -131,6 +151,14 @@ func NewProcInterruptsMetricsContext(
 			PROC_INTERRUPTS_IRQ_LABEL_NAME,
 			PROC_INTERRUPTS_INFO_DEVICES_LABEL_NAME,
 			PROC_INTERRUPTS_INFO_INFO_LABEL_NAME,
+		),
+		softirqsCounterMetricFmt: fmt.Sprintf(
+			`%s{%s="%s",%s="%s",%s="%%s",%s="%%d"} %%s %%s`+"\n",
+			PROC_SOFTIRQS_TOTAL_METRIC_NAME,
+			HOSTNAME_LABEL_NAME, hostname,
+			JOB_LABEL_NAME, job,
+			PROC_INTERRUPTS_IRQ_LABEL_NAME,
+			PROC_INTERRUPTS_CPU_LABEL_NAME,
 		),
 		generatorId: PROC_INTERRUPTS_METRICS_GENERATOR_ID,
 		wChan:       wChan,
@@ -146,25 +174,36 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 	var (
 		err        error
 		interrupts procfs.Interrupts
+		softirqs   *procfs.Softirqs
 	)
 
-	savedCrtIndex := procInterruptsMetricsCtx.crtIndex
-	defer func() {
-		if err != nil {
-			procInterruptsMetricsCtx.crtIndex = savedCrtIndex
-		}
-	}()
-
-	procInterruptsMetricsCtx.crtIndex = 1 - procInterruptsMetricsCtx.crtIndex
-
 	skipInterrupts := procInterruptsMetricsCtx.skipInterrupts
+	skipSoftirqs := procInterruptsMetricsCtx.skipSoftirqs
+	if skipInterrupts && skipSoftirqs {
+		return
+	}
+
+	crtIndex := 1 - procInterruptsMetricsCtx.crtIndex
+
 	if !skipInterrupts {
 		interrupts, err = procInterruptsMetricsCtx.fs.Interrupts()
 		if err != nil {
 			ProcInterruptsMetricsLog.Warn(err)
 			return
 		}
-		procInterruptsMetricsCtx.interrupts[procInterruptsMetricsCtx.crtIndex] = interrupts
+		procInterruptsMetricsCtx.interrupts[crtIndex] = interrupts
+	}
+	if !skipSoftirqs {
+		softirqs = procInterruptsMetricsCtx.softirqs[crtIndex]
+		if softirqs == nil {
+			softirqs = &procfs.Softirqs{}
+			procInterruptsMetricsCtx.softirqs[crtIndex] = softirqs
+		}
+		_, err = procInterruptsMetricsCtx.fs.SoftirqsWithStruct(softirqs, procInterruptsMetricsCtx.keepNumCpus)
+		if err != nil {
+			ProcInterruptsMetricsLog.Warn(err)
+			return
+		}
 	}
 	promTs := strconv.FormatInt(procInterruptsMetricsCtx.timeNow().UnixMilli(), 10)
 
@@ -178,7 +217,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 	refreshCycleNum := procInterruptsMetricsCtx.refreshCycleNum
 
 	if !skipInterrupts {
-		prevInterrupts := procInterruptsMetricsCtx.interrupts[1-procInterruptsMetricsCtx.crtIndex]
+		prevInterrupts := procInterruptsMetricsCtx.interrupts[1-crtIndex]
 		interruptsCounterMetricFmt := procInterruptsMetricsCtx.interruptsCounterMetricFmt
 		interruptsInfoMetricFmt := procInterruptsMetricsCtx.interruptsInfoMetricFmt
 
@@ -225,6 +264,186 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 		}
 	}
 
+	if !skipSoftirqs {
+		var (
+			cpus, prevCpus []uint64
+			softirq        string
+		)
+		prevSoftirqs := procInterruptsMetricsCtx.softirqs[1-crtIndex]
+		softirqsCounterMetricFmt := procInterruptsMetricsCtx.softirqsCounterMetricFmt
+		fullMetrics := fullMetricsFactor <= 1 || prevSoftirqs == nil
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_HI
+		cpus = softirqs.Hi
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.Hi
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_TIMER
+		cpus = softirqs.Timer
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.Timer
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_NET_RX
+		cpus = softirqs.NetRx
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.NetRx
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_NET_TX
+		cpus = softirqs.NetTx
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.NetTx
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_BLOCK
+		cpus = softirqs.Block
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.Block
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_IRQ_POLL
+		cpus = softirqs.IRQPoll
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.IRQPoll
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_TASKLET
+		cpus = softirqs.Tasklet
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.Tasklet
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_SCHED
+		cpus = softirqs.Sched
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.Sched
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_HR_TIMER
+		cpus = softirqs.HRTimer
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.HRTimer
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+
+		softirq = PROC_SOFTIRQS_TOTAL_IRQ_LABEL_VALUE_RCU
+		cpus = softirqs.RCU
+		if fullMetrics || procInterruptsMetricsCtx.GetRefreshGroupNum(softirq) == refreshCycleNum {
+			for cpu, value := range cpus {
+				fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+				metricCount += 1
+			}
+		} else {
+			prevCpus = prevSoftirqs.RCU
+			for cpu, value := range cpus {
+				if value != prevCpus[cpu] {
+					fmt.Fprintf(buf, softirqsCounterMetricFmt, softirq, cpu, value, promTs)
+					metricCount += 1
+				}
+			}
+		}
+	}
+
 	if buf.Len() > 0 {
 		buf.WriteByte('\n')
 		byteCount += buf.Len()
@@ -235,7 +454,7 @@ func (procInterruptsMetricsCtx *ProcInterruptsMetricsContext) GenerateMetrics() 
 		bufPool.ReturnBuffer(buf)
 	}
 
-	// Some housekeeping if delta strategy is in effect:
+	procInterruptsMetricsCtx.crtIndex = crtIndex
 	if fullMetricsFactor > 1 {
 		// Move to the next refresh cycle:
 		refreshCycleNum += 1
@@ -259,6 +478,7 @@ func BuildProcInterruptsMetricsCtxFromArgs() (*ProcInterruptsMetricsContext, err
 		interval,
 		fullMetricsInterval,
 		GlobalProcfsRoot,
+		PROC_SOFTIRQS_KEEP_NUM_CPUS_AUTODETECT,
 		// needed for testing:
 		GlobalMetricsHostname,
 		GlobalMetricsJob,
@@ -274,6 +494,7 @@ func BuildProcInterruptsMetricsCtxFromArgs() (*ProcInterruptsMetricsContext, err
 	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: fullMetricsInterval=%s", procInterruptsMetricsCtx.fullMetricsInterval)
 	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: fullMetricsFactor=%d", procInterruptsMetricsCtx.fullMetricsFactor)
 	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: procfsRoot=%s", GlobalProcfsRoot)
+	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: keepNumCpus=%d", procInterruptsMetricsCtx.keepNumCpus)
 	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: hostname=%s", procInterruptsMetricsCtx.hostname)
 	ProcInterruptsMetricsLog.Infof("proc_interrupts metrics: job=%s", procInterruptsMetricsCtx.job)
 	return procInterruptsMetricsCtx, nil

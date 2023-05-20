@@ -20,9 +20,12 @@ type ProcInterruptsTestCase struct {
 	Name                    string
 	ProcfsRoot              string
 	PrevInterrupts          procfs.Interrupts
+	PrevSoftirqs            *procfs.Softirqs
+	keepNumCpus             int
 	PrevRefreshGroupNum     map[string]int
 	PrevNextRefreshGroupNum int
 	WantInterrupts          procfs.Interrupts
+	WantSoftirqs            *procfs.Softirqs
 	Timestamp               time.Time
 	WantRefreshGroupNum     map[string]int
 	WantMetrics             []string
@@ -46,6 +49,7 @@ func procInterruptsTest(t *testing.T, tc *ProcInterruptsTestCase) {
 		time.Second,
 		time.Second*time.Duration(tc.FullMetricsFactor),
 		tc.ProcfsRoot,
+		0,
 		TestHostname,
 		TestJob,
 		timeNow,
