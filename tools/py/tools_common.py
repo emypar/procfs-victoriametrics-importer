@@ -4,11 +4,58 @@ import dataclasses
 import json
 import os
 import sys
-from typing import Any
+from typing import Any, List
 
 from metrics_common_test import PVMI_TOP_DIR
 
 pvmi_go_pkg_dir = os.path.join(PVMI_TOP_DIR, "pvmi")
+
+StructBaseVal = Any
+StructBaseFieldSpec = str
+
+
+def get_field_spec_list(obj: Any) -> List[StructBaseFieldSpec]:
+    field_spec_list = []
+    if isinstance(obj, list):
+        for i, val in enumerate(obj):
+            field_spec_list.extend(f"[{i}]{f}" for f in get_field_spec_list(val))
+    elif isinstance(obj, dict):
+        for k, val in obj.items():
+            field_spec_list.extend(f"[{k!r}]{f}" for f in get_field_spec_list(val))
+    elif hasattr(obj, "field_list"):
+        for field in obj.field_list():
+            field_spec_list.extend(
+                f".{field}{f}"
+                for f in get_field_spec_list(getattr(obj, field))
+                if not field.startswith("_")
+            )
+    else:
+        field_spec_list.append("")
+    return field_spec_list
+
+
+def to_json_compat(obj: Any, ignore_none: bool = False) -> Any:
+    if hasattr(obj, "_to_json_compat"):
+        return obj._to_json_compat(ignore_none=ignore_none)
+    if isinstance(obj, bytes):
+        return list(map(int, obj))
+    if isinstance(obj, (list, tuple)):
+        return list(to_json_compat(o, ignore_none=ignore_none) for o in obj)
+    if isinstance(obj, set):
+        return {str(o): True for o in obj if o is not None or not ignore_none}
+    if isinstance(obj, dict):
+        return {
+            str(k): to_json_compat(v, ignore_none=ignore_none)
+            for k, v in obj.items()
+            if v is not None or not ignore_none
+        }
+    if hasattr(obj, "field_list"):
+        return {
+            field: to_json_compat(getattr(obj, field), ignore_none)
+            for field in obj.field_list()
+            if getattr(obj, field) is not None or not ignore_none
+        }
+    return obj
 
 
 @dataclasses.dataclass
@@ -18,34 +65,17 @@ class StructBase:
             field for field in self.__dataclass_fields__ if not field.startswith("_")
         ]
 
+    def get_field_spec_list(self) -> List[StructBaseFieldSpec]:
+        return get_field_spec_list(self)
+
+    def get_field(self, field_spec: StructBaseFieldSpec) -> StructBaseVal:
+        return eval(f"self{field_spec}")
+
+    def set_field(self, field_spec: StructBaseFieldSpec, val: StructBaseVal):
+        exec(f"self{field_spec} = {val!r}")
+
     def to_json_compat(self, ignore_none: bool = False):
-        json_compat = {}
-        for field in self.field_list():
-            val = getattr(self, field)
-            if isinstance(val, bytes):
-                val = list(map(int, val))
-            elif isinstance(val, (list, tuple)):
-                val = [
-                    v.to_json_compat(ignore_none=ignore_none)
-                    if hasattr(v, "to_json_compat")
-                    else v
-                    for v in val
-                    if v is not None or not ignore_none
-                ]
-            elif isinstance(val, set):
-                val = {str(v): True for v in val if v is not None or not ignore_none}
-            elif isinstance(val, dict):
-                val = {
-                    str(k): v.to_json_compat(ignore_none=ignore_none)
-                    if hasattr(v, "to_json_compat")
-                    else v
-                    for (k, v) in val.items()
-                }
-            elif hasattr(val, "to_json_compat"):
-                val = val.to_json_compat(ignore_none=ignore_none)
-            if val is not None or not ignore_none:
-                json_compat[field] = val
-        return json_compat
+        return to_json_compat(self, ignore_none=ignore_none)
 
 
 def ts_to_prometheus_ts(ts: float) -> int:

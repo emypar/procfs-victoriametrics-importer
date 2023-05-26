@@ -9,7 +9,13 @@ from typing import List, Optional, Tuple
 
 import procfs
 from metrics_common_test import TestClktckSec, TestdataProcfsRoot, TestdataTestCasesDir
-from tools_common import StructBase, rel_path_to_file, save_to_json_file
+from tools_common import (
+    StructBase,
+    StructBaseFieldSpec,
+    StructBaseVal,
+    rel_path_to_file,
+    save_to_json_file,
+)
 
 from .common import Metric, go_time_to_ts, metrics_delta, ts_to_go_time
 from .pid_list import get_pid_tid_list
@@ -39,13 +45,13 @@ GUARANTEED_INACTIVE_THRESHOLD = 2 * int(PID_SCAN_INTERVAL_SECONDS / TestClktckSe
 
 # List of (stat_field, field_spec) that should be ignored for delta test cases:
 STAT_FIELD_SPEC_IGNORE_FOR_DELTA = {
-    ("ProcStat", "PID"),
-    ("ProcStat", "Starttime"),
-    ("ProcStatus", "PID"),
+    ("ProcStat", ".PID"),
+    ("ProcStat", ".Starttime"),
+    ("ProcStatus", ".PID"),
 }
 
 
-def procfs_struct_val_variant(val: procfs.ProcfsStructVal) -> procfs.ProcfsStructVal:
+def procfs_struct_val_variant(val: StructBaseVal) -> StructBaseVal:
     """Return a variant for a field value, useful for forcing a delta"""
     if isinstance(val, list):
         return list(map(procfs_struct_val_variant, val))
@@ -59,7 +65,7 @@ def procfs_struct_val_variant(val: procfs.ProcfsStructVal) -> procfs.ProcfsStruc
 
 def alter_procfs_struct_field(
     struct: procfs.ProcfsStructType,
-    field_spec: procfs.ProcfsStructFieldSpec,
+    field_spec: StructBaseFieldSpec,
 ):
     struct.set_field(
         field_spec, procfs_struct_val_variant(struct.get_field(field_spec))
@@ -193,12 +199,12 @@ def make_active_threshold_pmtc(
     # latter all should.
 
     # The following (stat, index, stat_field) will generate metrics  regardless of active state:
-    always_stat_field_spec_list = [("ProcStat", "RSS")]
+    always_stat_field_spec_list = [("ProcStat", ".RSS")]
     # The following (stat, stat_field) will generate metrics for active processes:
     active_only_stat_field_spec_list = [
-        ("ProcStat", "RSS"),
-        ("ProcStatus", "VmSize"),
-        ("ProcIo", "RChar"),
+        ("ProcStat", ".RSS"),
+        ("ProcStatus", ".VmSize"),
+        ("ProcIo", ".RChar"),
     ]
 
     pmtc_list = []
@@ -243,7 +249,7 @@ def make_active_threshold_pmtc(
 
 def get_stat_field_spec_list(
     pmtc: PidMetricsTestCase,
-) -> List[Tuple[str, procfs.ProcfsStructFieldSpec]]:
+) -> List[Tuple[str, StructBaseFieldSpec]]:
     """Get the list of (stat_field, field_spec) pairs that can be used for deltas."""
 
     stat_field_spec_list = []
@@ -270,7 +276,7 @@ def get_stat_field_spec_list(
 def make_delta_pmtc(
     pmtc: PidMetricsTestCase,
     stat_field: str,
-    stat_field_spec: procfs.ProcfsStructFieldSpec,
+    stat_field_spec: StructBaseFieldSpec,
     name: Optional[str] = "delta",
 ) -> PidMetricsTestCase:
     """Build a delta test case where just one field of a given stat changes"""
@@ -280,7 +286,7 @@ def make_delta_pmtc(
     else:
         name += f":{stat_field}"
     if stat_field_spec is not None:
-        name += f":{stat_field_spec}"
+        name += f"{stat_field_spec}"
 
     # Ensure delta strategy:
     fullMetricsFactor = 2
@@ -313,7 +319,7 @@ def make_delta_pmtc(
         prev_stat = getattr(new_pmtc.PrevPmce, stat_field)[
             getattr(new_pmtc.PrevPmce, stat_index_field)
         ]
-        if stat_field != "ProcStat" or stat_field_spec not in {"UTime", "STime"}:
+        if stat_field != "ProcStat" or stat_field_spec not in {".UTime", ".STime"}:
             alter_procfs_struct_field(prev_stat, stat_field_spec)
             update_pmce(new_pmtc.PrevPmce)
             sync_with_prev_stat(new_pmtc, stat_field)

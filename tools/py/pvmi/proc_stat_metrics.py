@@ -69,16 +69,16 @@ def proc_stat_metrics(
             cpu = "all"
         prev_cpu_stat = prev_proc_stat.CPU[i] if prev_proc_stat is not None else None
         for field, cpu_time_type in [
-            ("User", "user"),
-            ("Nice", "nice"),
-            ("System", "system"),
-            ("Idle", "idle"),
-            ("Iowait", "iowait"),
-            ("IRQ", "irq"),
-            ("SoftIRQ", "softirq"),
-            ("Steal", "steal"),
-            ("Guest", "guest"),
-            ("GuestNice", "guest_nice"),
+            (".User", "user"),
+            (".Nice", "nice"),
+            (".System", "system"),
+            (".Idle", "idle"),
+            (".Iowait", "iowait"),
+            (".IRQ", "irq"),
+            (".SoftIRQ", "softirq"),
+            (".Steal", "steal"),
+            (".Guest", "guest"),
+            (".GuestNice", "guest_nice"),
         ]:
             val = cpu_stat.get_field(field)
             metrics.append(

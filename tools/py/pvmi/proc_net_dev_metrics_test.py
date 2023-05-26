@@ -220,7 +220,7 @@ def make_delta_pndtc(
             val = proc_net_dev_line.get_field(field_spec)
             if not isinstance(val, (int, float)):
                 continue
-            if field_spec in {"rx_bytes", "tx_byes"} and val == 0:
+            if field_spec in {".rx_bytes", ".tx_bytes"} and val == 0:
                 continue
             prev_val = 0 if val != 0 else 1
             prev_proc_net_dev_line = deepcopy(proc_net_dev_line)
@@ -240,13 +240,13 @@ def make_delta_pndtc(
                 ),
             )
             want_rx_bps = deepcopy(prev_rx_bps)
-            if field_spec == "rx_bytes":
+            if field_spec == ".rx_bytes":
                 want_rx_bps[device] = int((val - prev_val) / (ts - prev_ts) * 8)
             want_tx_bps = deepcopy(prev_tx_bps)
-            if field_spec == "tx_bytes":
+            if field_spec == ".tx_bytes":
                 want_tx_bps[device] = int((val - prev_val) / (ts - prev_ts) * 8)
             tc = ProcNetDevMetricsTestCase(
-                Name=f"{name}:{device}:{field_spec}:{prev_val}->{val}",
+                Name=f"{name}:{device}{field_spec}:{prev_val}->{val}",
                 ProcfsRoot=rel_path_to_file(procfs_root),
                 PrevNetDev=prev_proc_net_dev,
                 PrevRxBps=prev_rx_bps,

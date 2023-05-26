@@ -12,9 +12,11 @@ tools_dir = os.path.dirname(
 sys.path.extend(tools_dir)
 
 
-from .common import ProcfsStructFieldSpec, ProcfsStructVal
+from .data_model import FixedLayoutDataModel
 from .interrupts import Interrupt, Interrupts, load_interrupts
 from .net_dev import NetDev, NetDevLine, load_net_dev
+from .net_snmp6_data_model import load_net_snmp6_data_model
+from .net_snmp_data_model import load_net_snmp_data_model
 from .proc_cgroup import ProcPidCgroups, load_proc_pid_cgroups
 from .proc_cmdline import ProcPidCmdline, load_proc_pid_cmdline
 from .proc_io import ProcIO, load_proc_pid_io
@@ -35,4 +37,5 @@ ProcfsStructType = Union[
     Softirqs,
     Stat,
     Stat2,
+    FixedLayoutDataModel,
 ]

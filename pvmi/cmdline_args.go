@@ -9,13 +9,13 @@ import (
 )
 
 const (
-	// proc_interrupts defaults:
+	// proc_interrupts_softirqs defaults:
 	DEFAULT_PROC_INTERRUPTS_METRICS_SCAN_INTERVAL         = 1  // seconds
 	DEFAULT_PROC_INTERRUPTS_METRICS_FULL_METRICS_INTERVAL = 15 // seconds
 
-	// proc_softirqs defaults:
-	DEFAULT_PROC_SOFTIRQS_METRICS_SCAN_INTERVAL         = "1s"
-	DEFAULT_PROC_SOFTIRQS_METRICS_FULL_METRICS_INTERVAL = "15s"
+	// proc_net_snmp_snmp6 defaults:
+	DEFAULT_PROC_NET_SNMP_SCAN_INTERVAL         = 1
+	DEFAULT_PROC_NET_SNMP_FULL_METRICS_INTERVAL = 15
 
 	// The help lines are wrapped around to the following width:
 	DEFAULT_USAGE_WIDTH = 58
@@ -40,22 +40,25 @@ var ProcInterruptsMetricsFullMetricsIntervalArg = flag.Float64(
 	`),
 )
 
-// proc_softirqs:
-var ProcSoftirqsMetricsScanIntervalArg = flag.String(
-	"proc-softirqs-metrics-scan-interval",
-	DEFAULT_PROC_SOFTIRQS_METRICS_SCAN_INTERVAL,
-	`proc_softirqs metrics interval in seconds, use 0 to disable.`,
+// proc_net_snmp_snmp6:
+var ProcNetSnmpScanIntervalArg = flag.Float64(
+	"proc-net-snmp-scan-interval",
+	DEFAULT_PROC_NET_SNMP_SCAN_INTERVAL,
+	FormatFlagUsage(`
+	proc_net_snmp[6] metrics interval in (fractional) seconds, use 0 to
+	disable.
+	`),
 )
 
-var ProcSoftirqsMetricsFullMetricsIntervalArg = flag.String(
-	"proc-softirqs-metrics-full-metrics-interval",
-	DEFAULT_PROC_SOFTIRQS_METRICS_FULL_METRICS_INTERVAL,
+var ProcNetSnmpFullMetricsIntervalArg = flag.Float64(
+	"proc-net-snmp-full-metrics-interval",
+	DEFAULT_PROC_NET_SNMP_FULL_METRICS_INTERVAL,
 	FormatFlagUsage(`
-	How often to generate full metrics, in seconds; normally only the metrics
-	whose value has changed from the previous scan are generated, but every
-	so often the entire set is generated to prevent queries from having to go
-	too much back in time to find the last value. Use 0 to generate full
-	metrics at every scan.
+	How often to generate full metrics, in (fractional) seconds; normally
+	only the metrics whose value has changed from the previous scan are
+	generated, but every so often the entire set is generated to prevent
+	queries from having to go too much back in time to find the last value.
+	Use 0 to generate full metrics at every scan.
 	`),
 )
 

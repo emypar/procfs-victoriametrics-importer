@@ -35,8 +35,8 @@ def proc_net_dev_line_metrics(
             prev_ts = prev_net_dev_line._ts
         d_time = ts - prev_ts
         for metric_name, field_spec, side in [
-            ("proc_net_dev_bps", "rx_bytes", "rx"),
-            ("proc_net_dev_bps", "tx_bytes", "tx"),
+            ("proc_net_dev_bps", ".rx_bytes", "rx"),
+            ("proc_net_dev_bps", ".tx_bytes", "tx"),
         ]:
             d_val = net_dev_line.get_field(field_spec) - prev_net_dev_line.get_field(
                 field_spec
@@ -51,8 +51,8 @@ def proc_net_dev_line_metrics(
                 )
             )
     for metric_name, field_spec, side in [
-        ("proc_net_dev_bytes_total", "rx_bytes", "rx"),
-        ("proc_net_dev_bytes_total", "tx_bytes", "tx"),
+        ("proc_net_dev_bytes_total", ".rx_bytes", "rx"),
+        ("proc_net_dev_bytes_total", ".tx_bytes", "tx"),
     ]:
         val = net_dev_line.get_field(field_spec)
         metrics.extend(
@@ -70,20 +70,20 @@ def proc_net_dev_line_metrics(
             ]
         )
     for metric_name, field_spec, side in [
-        ("proc_net_dev_packets_total", "rx_packets", "rx"),
-        ("proc_net_dev_errors_total", "rx_errors", "rx"),
-        ("proc_net_dev_dropped_total", "rx_dropped", "rx"),
-        ("proc_net_dev_fifo_total", "rx_fifo", "rx"),
-        ("proc_net_dev_frame_total", "rx_frame", "rx"),
-        ("proc_net_dev_compressed_total", "rx_compressed", "rx"),
-        ("proc_net_dev_multicast_total", "rx_multicast", "rx"),
-        ("proc_net_dev_packets_total", "tx_packets", "tx"),
-        ("proc_net_dev_errors_total", "tx_errors", "tx"),
-        ("proc_net_dev_dropped_total", "tx_dropped", "tx"),
-        ("proc_net_dev_fifo_total", "tx_fifo", "tx"),
-        ("proc_net_dev_collisions_total", "tx_collisions", "tx"),
-        ("proc_net_dev_carrier_total", "tx_carrier", "tx"),
-        ("proc_net_dev_compressed_total", "tx_compressed", "tx"),
+        ("proc_net_dev_packets_total", ".rx_packets", "rx"),
+        ("proc_net_dev_errors_total", ".rx_errors", "rx"),
+        ("proc_net_dev_dropped_total", ".rx_dropped", "rx"),
+        ("proc_net_dev_fifo_total", ".rx_fifo", "rx"),
+        ("proc_net_dev_frame_total", ".rx_frame", "rx"),
+        ("proc_net_dev_compressed_total", ".rx_compressed", "rx"),
+        ("proc_net_dev_multicast_total", ".rx_multicast", "rx"),
+        ("proc_net_dev_packets_total", ".tx_packets", "tx"),
+        ("proc_net_dev_errors_total", ".tx_errors", "tx"),
+        ("proc_net_dev_dropped_total", ".tx_dropped", "tx"),
+        ("proc_net_dev_fifo_total", ".tx_fifo", "tx"),
+        ("proc_net_dev_collisions_total", ".tx_collisions", "tx"),
+        ("proc_net_dev_carrier_total", ".tx_carrier", "tx"),
+        ("proc_net_dev_compressed_total", ".tx_compressed", "tx"),
     ]:
         metrics.append(
             Metric(

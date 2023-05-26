@@ -7,6 +7,7 @@ from pvmi import (
     pid_list_test,
     proc_interrupts_softirqs_metrics_test,
     proc_net_dev_metrics_test,
+    proc_net_snmp_snmp6_metrics_test,
     proc_pid_metrics_test,
     proc_stat_metrics_test,
 )
@@ -19,6 +20,7 @@ gtc_map = {
         proc_stat_metrics_test,
         proc_net_dev_metrics_test,
         proc_interrupts_softirqs_metrics_test,
+        proc_net_snmp_snmp6_metrics_test,
     ]
 }
 

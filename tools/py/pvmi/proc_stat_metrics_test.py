@@ -73,19 +73,18 @@ def make_proc_stat_pcpu(
         pcpu[cpu] = PCpu()
         prev_cpu_stat = prev_proc_stat.CPU[i]
         for field in [
-            "User",
-            "Nice",
-            "System",
-            "Idle",
-            "Iowait",
-            "IRQ",
-            "SoftIRQ",
-            "Steal",
-            "Guest",
-            "GuestNice",
+            ".User",
+            ".Nice",
+            ".System",
+            ".Idle",
+            ".Iowait",
+            ".IRQ",
+            ".SoftIRQ",
+            ".Steal",
+            ".Guest",
+            ".GuestNice",
         ]:
-            setattr(
-                pcpu[cpu],
+            pcpu[cpu].set_field(
                 field,
                 (cpu_stat.get_field(field) - prev_cpu_stat.get_field(field))
                 * TestClktckSec
@@ -225,7 +224,7 @@ def make_delta_psmtc(
         )
         psmtc_list.append(
             ProcStatMetricsTestCase(
-                Name=f"{name}:{field_spec}:{prev_val}->{val}",
+                Name=f"{name}:{proc_stat.__class__.__name__}{field_spec}:{prev_val}->{val}",
                 ProcfsRoot=rel_path_to_file(procfs_root),
                 PrevStat=[prev_proc_stat, prev_proc_stat],
                 PrevCrtIndex=0,

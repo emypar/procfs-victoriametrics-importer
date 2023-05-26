@@ -4,6 +4,7 @@
 
 import dataclasses
 import os
+import re
 import sys
 import time
 from datetime import datetime, timezone
@@ -24,7 +25,7 @@ HIGH32_METRICS_NAME_SUFFIX = "_high32"
 @dataclasses.dataclass
 class Metric:
     metric: str = ""
-    val: Union[int, float] = 0
+    val: Union[int, float, str] = 0
     ts: int = 0
     valfmt: Optional[str] = None
 
@@ -37,8 +38,10 @@ class Metric:
             valstr = str(self.val)
         return " ".join([self.metric, valstr, str(self.ts)])
 
-    def to_json_compat(self, ignore_none: bool = False):
+    def _to_json_compat(self, ignore_none: bool = False):
         return self.asstr()
+
+    to_json_compat = _to_json_compat
 
     def name(self):
         i = self.metric.find("{")
@@ -107,3 +110,23 @@ def metrics_delta(
     if must_add_metrics:
         delta_metrics.extend(m for m in metrics if m.metric in must_add_metrics)
     return delta_metrics
+
+
+def make_metric_name(
+    name: str,
+    prefix: str = "",
+    suffix: str = "",
+) -> str:
+    # prefix and suffix:
+    if prefix:
+        name = prefix + "_" + name
+    if suffix:
+        name += "_" + suffix
+    # camelCase -> camel_case:
+    name = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", name).lower()
+    # multiple non alpha -> _:
+    name = re.sub(r"[^a-z0-9]+", "_", name)
+    # remove starting/endig '_':
+    name = re.sub(r"(^)(_+)", "", name)
+    name = re.sub(r"(_+)$", "", name)
+    return name
