@@ -11,12 +11,7 @@ from metrics_common_test import TestdataProcfsRoot, TestdataTestCasesDir
 from tools_common import StructBase, rel_path_to_file, save_to_json_file
 
 from .common import Metric, ts_to_go_time
-from .proc_net_snmp_snmp6_metrics import (
-    net_snmp6_metric_name_map,
-    net_snmp_metric_name_map,
-    proc_net_snmp6_metrics,
-    proc_net_snmp_metrics,
-)
+from .proc_net_snmp_snmp6_metrics import proc_net_snmp6_metrics, proc_net_snmp_metrics
 
 # The following should match pvmi/proc_net_snmp_snmp6_metrics_test.go:
 PROC_NET_SNMP_METRICS_TEST_CASES_FILE_NAME = "proc_net_snmp_metrics_test_cases.json"
@@ -43,121 +38,141 @@ class ProcNetSnmpTestCase(StructBase):
     RefreshCycleNum: int = 0
 
 
-def load_net_snmp_tc(
+def load_fldm(
+    procfs_root: str = TestdataProcfsRoot,
+    is_snmp6: bool = False,
+) -> procfs.FixedLayoutDataModel:
+    return (
+        procfs.load_net_snmp6_data_model(procfs_root=procfs_root)
+        if is_snmp6
+        else procfs.load_net_snmp_data_model(procfs_root=procfs_root)
+    )
+
+
+def get_metrics(
+    fldm: procfs.FixedLayoutDataModel,
+    is_snmp6: bool = False,
+) -> List[Metric]:
+    return proc_net_snmp6_metrics(fldm) if is_snmp6 else proc_net_snmp_metrics(fldm)
+
+
+def set_fldm(
+    tc: ProcNetSnmpTestCase,
+    fldm: procfs.FixedLayoutDataModel,
+    prev_fldm: Optional[procfs.FixedLayoutDataModel] = None,
+    is_snmp6: bool = False,
+) -> ProcNetSnmpTestCase:
+    if is_snmp6:
+        tc.PrevNetSnmp6 = prev_fldm
+        tc.WantNetSnmp6 = fldm
+    else:
+        tc.PrevNetSnmp = prev_fldm
+        tc.WantNetSnmp = fldm
+    return tc
+
+
+def make_full_tc(
     name: str = "full",
-    net_snmp: Optional[procfs.FixedLayoutDataModel] = None,
+    fldm: Optional[procfs.FixedLayoutDataModel] = None,
+    is_snmp6: bool = False,
     procfs_root: str = TestdataProcfsRoot,
     full_metrics_factor: int = 0,
 ) -> ProcNetSnmpTestCase:
-    if net_snmp is None:
-        net_snmp = procfs.load_net_snmp_data_model(procfs_root=procfs_root)
-    ts = net_snmp._ts
+    if fldm is None:
+        fldm = load_fldm(procfs_root=procfs_root, is_snmp6=is_snmp6)
+    ts = fldm._ts
     timestamp = ts_to_go_time(ts)
-    tc = ProcNetSnmpTestCase(
-        Name=name,
-        ProcfsRoot=rel_path_to_file(procfs_root),
-        WantNetSnmp=net_snmp,
-        Timestamp=timestamp,
-        WantMetrics=proc_net_snmp_metrics(net_snmp),
-        FullMetricsFactor=full_metrics_factor,
+    tc = set_fldm(
+        ProcNetSnmpTestCase(
+            Name=name,
+            ProcfsRoot=rel_path_to_file(procfs_root),
+            Timestamp=timestamp,
+            WantMetrics=get_metrics(fldm, is_snmp6=is_snmp6),
+            FullMetricsFactor=full_metrics_factor,
+        ),
+        fldm,
+        is_snmp6=is_snmp6,
     )
     return tc
 
 
-def make_refresh_net_snmp_tc(
+def make_refresh_tc(
     name: str = "refresh",
-    net_snmp: Optional[procfs.FixedLayoutDataModel] = None,
+    is_snmp6: bool = False,
+    fldm: Optional[procfs.FixedLayoutDataModel] = None,
     procfs_root: str = TestdataProcfsRoot,
 ) -> List[ProcNetSnmpTestCase]:
     tc_list = []
-    if net_snmp is None:
-        net_snmp = procfs.load_net_snmp_data_model(procfs_root=procfs_root)
-    ts = net_snmp._ts
+    if fldm is None:
+        fldm = load_fldm(procfs_root=procfs_root, is_snmp6=is_snmp6)
+    ts = fldm._ts
     timestamp = ts_to_go_time(ts)
-    metrics = proc_net_snmp_metrics(net_snmp)
+    metrics = get_metrics(fldm, is_snmp6=is_snmp6)
     for full_metrics_factor in range(
-        0, len(net_snmp.Values) + 1, len(net_snmp.Values) // 13 + 1
+        0, len(fldm.Values) + 1, len(fldm.Values) // 13 + 1
     ):
         for refresh_cycle_num in range(max(full_metrics_factor, 1)):
-            keep_metric_names = set(
-                net_snmp_metric_name_map[net_snmp.Names[i]]
-                for i in range(len(net_snmp.Names))
+            want_metrics = [
+                metrics[i]
+                for i in range(len(metrics))
                 if full_metrics_factor <= 1
                 or (i % full_metrics_factor == refresh_cycle_num)
-            )
-            want_metrics = [
-                metric for metric in metrics if metric.name() in keep_metric_names
             ]
             tc_list.append(
-                ProcNetSnmpTestCase(
-                    Name=name,
-                    ProcfsRoot=rel_path_to_file(procfs_root),
-                    PrevNetSnmp=net_snmp,
-                    WantNetSnmp=net_snmp,
-                    Timestamp=timestamp,
-                    WantMetrics=want_metrics,
-                    FullMetricsFactor=full_metrics_factor,
-                    RefreshCycleNum=refresh_cycle_num,
+                set_fldm(
+                    ProcNetSnmpTestCase(
+                        Name=name,
+                        ProcfsRoot=rel_path_to_file(procfs_root),
+                        Timestamp=timestamp,
+                        WantMetrics=want_metrics,
+                        FullMetricsFactor=full_metrics_factor,
+                        RefreshCycleNum=refresh_cycle_num,
+                    ),
+                    fldm,
+                    prev_fldm=fldm,
+                    is_snmp6=is_snmp6,
                 )
             )
     return tc_list
 
 
-def load_net_snmp6_tc(
-    name: str = "full",
-    net_snmp6: Optional[procfs.FixedLayoutDataModel] = None,
-    procfs_root: str = TestdataProcfsRoot,
-    full_metrics_factor: int = 0,
-) -> ProcNetSnmpTestCase:
-    if net_snmp6 is None:
-        net_snmp6 = procfs.load_net_snmp6_data_model(procfs_root=procfs_root)
-    ts = net_snmp6._ts
-    timestamp = ts_to_go_time(ts)
-    tc = ProcNetSnmpTestCase(
-        Name=name,
-        ProcfsRoot=rel_path_to_file(procfs_root),
-        WantNetSnmp6=net_snmp6,
-        Timestamp=timestamp,
-        WantMetrics=proc_net_snmp6_metrics(net_snmp6),
-        FullMetricsFactor=full_metrics_factor,
-    )
-    return tc
-
-
-def make_refresh_net_snmp6_tc(
-    name: str = "refresh",
-    net_snmp6: Optional[procfs.FixedLayoutDataModel] = None,
+def make_delta_tc(
+    name: str = "delta",
+    is_snmp6: bool = False,
+    fldm: Optional[procfs.FixedLayoutDataModel] = None,
     procfs_root: str = TestdataProcfsRoot,
 ) -> List[ProcNetSnmpTestCase]:
     tc_list = []
-    if net_snmp6 is None:
-        net_snmp6 = procfs.load_net_snmp_data_model(procfs_root=procfs_root)
-    ts = net_snmp6._ts
+    if fldm is None:
+        fldm = load_fldm(procfs_root=procfs_root, is_snmp6=is_snmp6)
+    ts = fldm._ts
     timestamp = ts_to_go_time(ts)
-    metrics = proc_net_snmp6_metrics(net_snmp6)
-    for full_metrics_factor in range(
-        0, len(net_snmp6.Values) + 1, len(net_snmp6.Values) // 13 + 1
-    ):
-        for refresh_cycle_num in range(max(full_metrics_factor, 1)):
-            keep_metric_names = set(
-                net_snmp6_metric_name_map[net_snmp6.Names[i]]
-                for i in range(len(net_snmp6.Names))
-                if full_metrics_factor <= 1
-                or (i % full_metrics_factor == refresh_cycle_num)
-            )
-            want_metrics = [
-                metric for metric in metrics if metric.name() in keep_metric_names
-            ]
+    metrics = get_metrics(fldm, is_snmp6=is_snmp6)
+    full_metrics_factor = len(fldm.Values)
+    for refresh_cycle_num in range(max(full_metrics_factor, 1)):
+        prev_fldm = procfs.FixedLayoutDataModel(
+            Values=list(fldm.Values), Names=fldm.Names, Groups=fldm.Groups, _ts=ts - 1
+        )
+        for i in range(len(metrics)):
+            if full_metrics_factor > 1 and (
+                i % full_metrics_factor != refresh_cycle_num
+            ):
+                continue
+            prev_fldm.Values[i] = "0" if fldm.Values != "0" else "-1"
+            want_metrics = metrics[i : i + 1]
             tc_list.append(
-                ProcNetSnmpTestCase(
-                    Name=name,
-                    ProcfsRoot=rel_path_to_file(procfs_root),
-                    PrevNetSnmp6=net_snmp6,
-                    WantNetSnmp6=net_snmp6,
-                    Timestamp=timestamp,
-                    WantMetrics=want_metrics,
-                    FullMetricsFactor=full_metrics_factor,
-                    RefreshCycleNum=refresh_cycle_num,
+                set_fldm(
+                    ProcNetSnmpTestCase(
+                        Name=name,
+                        ProcfsRoot=rel_path_to_file(procfs_root),
+                        Timestamp=timestamp,
+                        WantMetrics=want_metrics,
+                        FullMetricsFactor=full_metrics_factor,
+                        RefreshCycleNum=refresh_cycle_num,
+                    ),
+                    fldm,
+                    prev_fldm=prev_fldm,
+                    is_snmp6=is_snmp6,
                 )
             )
     return tc_list
@@ -167,28 +182,35 @@ def generate_test_case_files(
     procfs_root: str = TestdataProcfsRoot,
     test_case_dir: str = TestdataTestCasesDir,
 ):
-    tc_list = []
-    net_snmp = procfs.load_net_snmp_data_model(procfs_root=procfs_root)
-    for full_metrics_factor in [0, 1, len(net_snmp.Values) + 1]:
-        tc_list.append(
-            load_net_snmp_tc(net_snmp=net_snmp, full_metrics_factor=full_metrics_factor)
-        )
-    tc_list.extend(make_refresh_net_snmp_tc(net_snmp=net_snmp))
-    save_to_json_file(
-        [tc.to_json_compat() for tc in tc_list],
-        os.path.join(test_case_dir, PROC_NET_SNMP_METRICS_TEST_CASES_FILE_NAME),
-    )
-
-    tc_list = []
-    net_snmp6 = procfs.load_net_snmp6_data_model(procfs_root=procfs_root)
-    for full_metrics_factor in [0, 1, len(net_snmp6.Values) + 1]:
-        tc_list.append(
-            load_net_snmp6_tc(
-                net_snmp6=net_snmp6, full_metrics_factor=full_metrics_factor
+    for is_snmp6 in [False, True]:
+        fldm = load_fldm(procfs_root=procfs_root, is_snmp6=is_snmp6)
+        tc_list = []
+        for full_metrics_factor in [0, 1, len(fldm.Values) + 1]:
+            tc_list.append(
+                make_full_tc(
+                    fldm=fldm,
+                    is_snmp6=is_snmp6,
+                    full_metrics_factor=full_metrics_factor,
+                )
             )
+        tc_list.extend(make_refresh_tc(fldm=fldm, is_snmp6=is_snmp6))
+        save_to_json_file(
+            [tc.to_json_compat() for tc in tc_list],
+            os.path.join(
+                test_case_dir,
+                PROC_NET_SNMP6_METRICS_TEST_CASES_FILE_NAME
+                if is_snmp6
+                else PROC_NET_SNMP_METRICS_TEST_CASES_FILE_NAME,
+            ),
         )
-    tc_list.extend(make_refresh_net_snmp6_tc(net_snmp6=net_snmp6))
-    save_to_json_file(
-        [tc.to_json_compat() for tc in tc_list],
-        os.path.join(test_case_dir, PROC_NET_SNMP6_METRICS_TEST_CASES_FILE_NAME),
-    )
+
+        tc_list = make_delta_tc(fldm=fldm, is_snmp6=is_snmp6)
+        save_to_json_file(
+            [tc.to_json_compat() for tc in tc_list],
+            os.path.join(
+                test_case_dir,
+                PROC_NET_SNMP6_METRICS_DELTA_TEST_CASES_FILE_NAME
+                if is_snmp6
+                else PROC_NET_SNMP_METRICS_DELTA_TEST_CASES_FILE_NAME,
+            ),
+        )

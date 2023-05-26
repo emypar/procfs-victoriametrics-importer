@@ -169,3 +169,43 @@ func TestProcNetSnmp6(t *testing.T) {
 		)
 	}
 }
+
+func TestProcNetSnmpDelta(t *testing.T) {
+	tcList := []ProcNetSnmpTestCase{}
+	err := testutils.LoadJsonFile(
+		path.Join(TestdataTestCasesDir, PROC_NET_SNMP_METRICS_DELTA_TEST_CASES_FILE_NAME),
+		&tcList,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range tcList {
+		t.Run(
+			fmt.Sprintf(
+				"Name=%s,FullMetricsFactor=%d,RefreshCycleNum=%d",
+				tc.Name, tc.FullMetricsFactor, tc.RefreshCycleNum,
+			),
+			func(t *testing.T) { procNetSnmpSnmp6Test(t, &tc) },
+		)
+	}
+}
+
+func TestProcNetSnmp6Delta(t *testing.T) {
+	tcList := []ProcNetSnmpTestCase{}
+	err := testutils.LoadJsonFile(
+		path.Join(TestdataTestCasesDir, PROC_NET_SNMP6_METRICS_DELTA_TEST_CASES_FILE_NAME),
+		&tcList,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range tcList {
+		t.Run(
+			fmt.Sprintf(
+				"Name=%s,FullMetricsFactor=%d,RefreshCycleNum=%d",
+				tc.Name, tc.FullMetricsFactor, tc.RefreshCycleNum,
+			),
+			func(t *testing.T) { procNetSnmpSnmp6Test(t, &tc) },
+		)
+	}
+}
