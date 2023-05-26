@@ -149,3 +149,23 @@ func TestProcNetSnmp(t *testing.T) {
 		)
 	}
 }
+
+func TestProcNetSnmp6(t *testing.T) {
+	tcList := []ProcNetSnmpTestCase{}
+	err := testutils.LoadJsonFile(
+		path.Join(TestdataTestCasesDir, PROC_NET_SNMP6_METRICS_TEST_CASES_FILE_NAME),
+		&tcList,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, tc := range tcList {
+		t.Run(
+			fmt.Sprintf(
+				"Name=%s,FullMetricsFactor=%d,RefreshCycleNum=%d",
+				tc.Name, tc.FullMetricsFactor, tc.RefreshCycleNum,
+			),
+			func(t *testing.T) { procNetSnmpSnmp6Test(t, &tc) },
+		)
+	}
+}

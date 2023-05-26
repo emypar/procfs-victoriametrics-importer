@@ -63,14 +63,17 @@ func (procNetSnmpMetricsCtx *ProcNetSnmpMetricsContext) GetGeneratorId() string 
 func NewProcNetSnmpMetricsContext(
 	interval time.Duration,
 	fullMetricsInterval time.Duration,
-	procfsRoot string,
 	// needed for testing:
+	procfsRoot string,
 	hostname string,
 	job string,
 	timeNow TimeNowFn,
 	wChan chan *bytes.Buffer,
 	bufPool *BufferPool,
 ) (*ProcNetSnmpMetricsContext, error) {
+	if procfsRoot == "" {
+		procfsRoot = GlobalProcfsRoot
+	}
 	if hostname == "" {
 		hostname = GlobalMetricsHostname
 	}
@@ -100,7 +103,7 @@ func NewProcNetSnmpMetricsContext(
 		crtNetSnmpIndex:     1,
 		netSnmp6:            make([]*procfs.FixedLayoutDataModel, 2),
 		crtNetSnmp6Index:    1,
-		generatorId:         PROC_INTERRUPTS_METRICS_GENERATOR_ID,
+		generatorId:         PROC_NET_SNMP_METRICS_GENERATOR_ID,
 		wChan:               wChan,
 		hostname:            hostname,
 		job:                 job,
@@ -203,8 +206,8 @@ func BuildProcNetSnmpMetricsCtxFromArgs() (*ProcNetSnmpMetricsContext, error) {
 	procNetSnmpMetricsCtx, err := NewProcNetSnmpMetricsContext(
 		interval,
 		fullMetricsInterval,
-		GlobalProcfsRoot,
 		// needed for testing, will be set to default values:
+		"",
 		"",
 		"",
 		nil, // timeNow TimeNowFn,
