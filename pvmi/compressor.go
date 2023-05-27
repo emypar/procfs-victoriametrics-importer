@@ -374,25 +374,16 @@ func (poolCtx *CompressorPoolContext) GetCompressorStats(id int) *CompressorStat
 }
 
 func startCompressor(id int, poolCtx *CompressorPoolContext) error {
-	compressionLevel,
-		batchTargetSize,
-		flushInterval,
-		alpha,
-		metricsWriteChan,
-		bufPool,
-		senderFn,
-		stats,
-		cancelCtx,
-		wg := poolCtx.compressionLevel,
-		poolCtx.batchTargetSize,
-		poolCtx.flushInterval,
-		poolCtx.alpha,
-		poolCtx.metricsWriteChan,
-		poolCtx.bufPool,
-		poolCtx.senderFn,
-		poolCtx.statsList[id],
-		poolCtx.cancelCtx,
-		poolCtx.wg
+	compressionLevel := poolCtx.compressionLevel
+	batchTargetSize := poolCtx.batchTargetSize
+	flushInterval := poolCtx.flushInterval
+	alpha := poolCtx.alpha
+	metricsWriteChan := poolCtx.metricsWriteChan
+	bufPool := poolCtx.bufPool
+	senderFn := poolCtx.senderFn
+	stats := poolCtx.statsList[id]
+	cancelCtx := poolCtx.cancelCtx
+	wg := poolCtx.wg
 
 	// Initialize a compressor writer; it cam use a dummy buffer since it will
 	// be reset at the beginning of each compression batch.
