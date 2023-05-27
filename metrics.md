@@ -41,51 +41,7 @@ Example: `proc_pid_stat_state` transitioning from state `R` to `S` at `t2`:
     t3:         proc_pid_stat_state{state=S}=1
 
 
-
-## Handling Large/High Precision Values
-
-Certain metrics have values that would exceed the 15 (15.95) precision of `float64`, e.g. `uint64`. Such values will be split in two metrics, `..._low32` and `..._high32` where `low32` == `value & 0xffffffff` and `high32` = `value >> 32`. This is useful for deltas or rates where the operation is applied 1st to each of the 2 halves which are then combined. e.g.: `delta = delta(high32) * 4294967296 + delta(low32)`, with the underlying assumption that the delta is fairly small. This is how the byte count is handled for interfaces.
-
-## Reducing The Number Of Data Points
-
-### Delta / Full Refresh
-
-In order to reduce the traffic between the importer and the import endpoints, only the metrics whose values have changed from the previous scan are being generated and sent. That requires that queries be made using the [last_over_time(METRIC[RANGE_INTERVAL])](https://prometheus.io/docs/prometheus/latest/querying/functions/#aggregation_over_time) function and to make the range interval predictable, all metrics have a guaranteed full refresh interval, when a metric is being generated regardless of its lack of change from the previous scan.
-
-Each metrics generator is configured with 2 intervals: _scan_ and _full\_refresh_. The ratio N = _full\_refresh_ / _scan_ is called _full\_refresh\_factor_ and it means that a specific metric will be generated every N scans.
-
-Ideally the full refresh cycles should be spread evenly across all metrics provided by a specific generator, leading to the following approach:
-
-* each metric is associated with a _refresh\_group\_num_, 0..N-1. This is a cyclic number assigned first time when the object to which the metric belongs is being discovered and it is incremented modulo N after each use
-* each scan has a _refresh\_cycle\_num_, 0..N-1. This is a cyclic counter incremented modulo N after each scan
-* metrics that have _refresh\_group\_num_ == _refresh\_cycle\_num_ will be generated part of the full refresh
-
-Since the association of a particular metric with a  _refresh\_group\_num_ is unchanged for the lifetime of the metric, the metric is guaranteed to be generated at least every Nth scan.
-
-Since the _refresh\_group\_num_, assigned at object creation, is incremented modulo N afterwards, this will lead to the spread of the full refresh for the metrics associated with those objects over N cycles.
-
-**Note:** The delta approach can be disabled by setting the _full\_refresh_ interval to 0.
-
-e.g.
-
-Let's consider the case of the `proc_pid_metrics` generator w/ N, the full refresh factor, = 15 and with the  _new\_refresh\_group\_num_, the next _refresh\_group\_num_ to be assigned, = 12. In the current scan 5 new PIDs are being discovered: 1001, 1002, 1003, 1004 and 1005. The _refresh\_group\_num_ assignment will be as following:
-| PID | _refresh\_group\_num_ |
-| ---: | ---------------------: |
-| 1001 | 12 |
-| 1002 | 13 |
-| 1003 | 14 |
-| 1004 | 0 |
-| 1005 | 1 |
-
-Thus each of the new PID will have a full refresh in a **different** scan cycle.
-
-### Active Processes/Threads
-
-In addition to the delta approach, process/thread metrics use the concept of active process to further reduce the number of metrics. PIDs/TIDs are classified into active/inactive based upon %CPU since the previous scan >= _active\_threshold_. Memory and I/O stats are parsed and the associated metrics are generated only for active PIDs/TIDs.
-
-**Note** The active process check can be disabled by setting _active\_threshold_ to 0.
-
-
+See [Reducing The Number Of Data Points](README.md#reducing-the-number-of-data-points) in [README](README.md) for [delta](README.md#delta-v-refresh) and [active process](README.md#active-processesthreads) concepts.
 
 ## Metrics
 
